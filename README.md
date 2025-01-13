@@ -1,4 +1,4 @@
-# ai-rules-cli [WIP]
+# ai-rules [WIP]
 
 🛠️ A powerful CLI toolkit for extending and enhancing AI capabilities through customizable rules and commands.
 
@@ -18,7 +18,7 @@ This project is inspired by [devin.cursorrules](https://github.com/grapeot/devin
 ## Installation
 
 ```bash
-pip install ai-rules-cli
+pip install ai-rules
 ```
 
 ## Quick Start

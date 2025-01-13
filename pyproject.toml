@@ -3,7 +3,7 @@ requires = ["hatchling>=1.24.2", "hatch-vcs>=0.3.0"]
 build-backend = "hatchling.build"
 
 [project]
-name = "ai-rules-cli"
+name = "ai-rules"
 version = "0.1.0"
 description = "A powerful CLI toolkit for extending and enhancing AI capabilities through customizable rules and commands."
 readme = "README.md"
@@ -172,7 +172,3 @@ asyncio_mode = "auto"
 GOOGLE_API_KEY = ""  # Add your Google API key here
 GOOGLE_SEARCH_CX = ""  # Add your Google Custom Search Engine ID here
 BING_API_KEY = ""  # Add your Bing API key here
-
-[tool.ai-rules.scripts.test1]
-path = "G:\\PycharmProjects\\github\\ai-rules-cli\\examples\\uv_script_plugin\\search_engine.py"
-global = false
