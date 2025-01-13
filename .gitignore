@@ -20,3 +20,8 @@ target/*
 /build/
 /coverage.xml
 /.zip/
+/src/ai_rules_cli.egg-info/
+/output/
+/run-ide.bat
+*.egg-info
+/.windsurfrules

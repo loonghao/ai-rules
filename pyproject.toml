@@ -1,0 +1,178 @@
+[build-system]
+requires = ["hatchling>=1.24.2", "hatch-vcs>=0.3.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ai-rules-cli"
+version = "0.0.1"
+description = "A powerful CLI toolkit for extending and enhancing AI capabilities through customizable rules and commands."
+readme = "README.md"
+requires-python = ">=3.8"
+keywords = [
+    "ai",
+    "cli",
+    "rules",
+    "prompt-engineering",
+    "ai-assistant",
+    "uv",
+]
+authors = [
+    { name = "loonghao", email = "hal.long@outlook.com" },
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+    "click>=8.0.0",
+    "pyyaml>=6.0.0",
+    "requests>=2.25.0",
+    "httpx>=0.26.0",
+    "pydantic>=2.5.3",
+    "uv>=0.5.18",
+    "tomli>=2.0.1",
+    "tomli-w>=1.0.0",
+]
+
+[project.license]
+file = "LICENSE"
+
+[project.urls]
+Homepage = "https://github.com/loonghao/ai-rules-cli"
+Documentation = "https://github.com/loonghao/ai-rules-cli#readme"
+Repository = "https://github.com/loonghao/ai-rules-cli.git"
+Issues = "https://github.com/loonghao/ai-rules-cli/issues"
+
+[project.scripts]
+ai-rules = "ai_rules.cli:cli"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.4",
+    "pytest-cov>=4.0.0",
+    "pytest-asyncio>=0.23.3",
+    "black>=23.0.0",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
+    "ruff>=0.1.14",
+    "python-dotenv>=1.0.0",
+    "nox>=2023.0.0",
+]
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.0.1"
+tag_format = "v$version"
+version_files = [
+    "pyproject.toml:version",
+]
+
+[tool.black]
+line-length = 120
+target-version = [
+    "py38",
+    "py39",
+    "py310",
+    "py311",
+    "py312",
+]
+include = "\\.pyi?$"
+exclude = '''
+(
+  /(
+      \.eggs         # exclude a few common directories in the
+    | \.git          # root of the project
+    | \.hg
+    | \.mypy_cache
+    | \.tox
+    | \.nox
+    | \.venv
+    | _build
+    | buck-out
+    | build
+    | dist
+  )/
+)
+'''
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+lines_after_imports = 2
+use_parentheses = true
+
+[tool.ruff]
+line-length = 120
+target-version = "py38"
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "C",  # flake8-comprehensions
+    "B",  # flake8-bugbear
+]
+ignore = [
+    "E501",  # line too long
+    "PLR0913",  # too many arguments
+    "RUF001",  # ambiguous unicode character
+    "RUF002",  # ambiguous unicode character
+    "RUF003",  # ambiguous unicode character
+    "B904",  # raise from
+    "W293",  # blank line contains whitespace
+    "C901",  # function is too complex
+    "W291",  # trailing whitespace
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"noxfile.py" = ["E402", "I001"]
+"tests/*" = ["S101"]
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+overrides = [
+    { module = "tests.*", disallow_untyped_defs = false },
+]
+
+[tool.pytest.ini_options]
+testpaths = [
+    "tests",
+]
+python_files = [
+    "test_*.py",
+]
+addopts = "-ra -q --cov=ai_rules --cov-report=term-missing"
+asyncio_mode = "auto"
+
+
+[tool.ai-rules.env]
+GOOGLE_API_KEY = ""  # Add your Google API key here
+GOOGLE_SEARCH_CX = ""  # Add your Google Custom Search Engine ID here
+BING_API_KEY = ""  # Add your Bing API key here
+
+[tool.ai-rules.scripts.test1]
+path = "G:\\PycharmProjects\\github\\ai-rules-cli\\examples\\uv_script_plugin\\search_engine.py"
+global = false
