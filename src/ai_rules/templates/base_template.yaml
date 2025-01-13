@@ -1,0 +1,49 @@
+assistant:
+  name: "AI助手"
+  version: "1.0.0"
+  description: "AI辅助开发助手"
+
+environment:
+  venv:
+    cursor: "./venv"
+    windsurf: "./py310"
+    cli: "./venv"
+
+tools:
+  package_manager:
+    type: "uv"
+    commands:
+      install: "uv pip install {package}"
+      install_dev: "uv pip install -e ."
+      install_requirements: "uv pip install -r requirements.txt"
+      venv_create: "uv venv"
+      venv_activate: ".venv/Scripts/activate"  # Windows路径
+
+  llm:
+    providers:
+      - name: openai
+        model: gpt-4
+        priority: 1
+      - name: anthropic
+        model: claude-3-sonnet-20240229
+        priority: 2
+    default_provider: openai
+
+guidelines:
+  code_style:
+    - "使用类型提示"
+    - "遵循PEP 8规范"
+    - "添加必要的注释"
+    - "保持代码简洁"
+
+  development:
+    - "使用uv管理依赖"
+    - "编写单元测试"
+    - "处理异常情况"
+    - "优化性能"
+
+  project:
+    - "模块化设计"
+    - "版本控制"
+    - "文档完善"
+    - "代码审查"

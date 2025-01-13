@@ -1,0 +1,48 @@
+# CLI Assistant Rules Template
+# Extends base_template.yaml with CLI-specific configurations
+
+extends: base_template.yaml
+
+# CLI-specific Configurations
+cli_specific:
+  venv_path: "./venv"
+  file_extension: ".clirules"
+  
+  # CLI-specific tool configurations
+  tools:
+    llm:
+      default_provider: "openai"
+      providers:
+        - name: "openai"
+          model: "gpt-4"
+          priority: 1
+        - name: "anthropic"
+          model: "claude-3-sonnet-20240229"
+          priority: 2
+
+    command_line:
+      shell: "powershell"  # For Windows systems
+      encoding: "utf-8"
+      error_handling:
+        show_traceback: true
+        log_errors: true
+
+  # CLI-specific features
+  features:
+    - command_completion
+    - error_handling
+    - help_system
+    - plugin_support
+
+  # CLI-specific lessons
+  lessons:
+    user_specified_lessons:
+      - "使用适当的Windows系统shell命令"
+      - "正确处理命令行参数"
+      - "实现健壮的错误处理"
+      - "提供清晰的帮助信息和文档"
+    system_learned_lessons:
+      - "Windows路径使用反斜杠或双反斜杠"
+      - "PowerShell命令需要特别注意转义"
+      - "确保编码统一使用UTF-8"
+      - "处理跨平台兼容性问题"
