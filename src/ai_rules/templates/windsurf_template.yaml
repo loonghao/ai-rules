@@ -1,0 +1,35 @@
+# Windsurf Assistant Rules Template
+# Windsurf助手规则模板，扩展自base_template.yaml
+
+extends: base_template.yaml
+
+# Windsurf特定配置
+windsurf_specific:
+  venv_path: "./py310"
+  file_extension: ".windsurfrules"
+  scratchpad_file: "scratchpad.md"
+  
+  # Windsurf特定工具配置
+  tools:
+    llm:
+      default_provider: "openai"
+      command_format: "py310/bin/python ./tools/llm_api.py --prompt {prompt}"
+    
+    web_scraper:
+      command_format: "py310/bin/python ./tools/web_scraper.py --max-concurrent {max_concurrent} {urls}"
+
+    search_engine:
+      command_format: "py310/bin/python ./tools/search_engine.py {query}"
+
+  # Windsurf特定课程
+  lessons:
+    user_specified_lessons:
+      - "使用py310虚拟环境进行所有Python操作"
+      - "保持程序输出清晰和信息丰富"
+      - "修改文件前先验证内容"
+      - "优先使用异步操作提高性能"
+    system_learned_lessons:
+      - "合理使用内存和CPU资源"
+      - "优化大规模代码生成"
+      - "保持IDE响应流畅"
+      - "智能处理项目依赖"

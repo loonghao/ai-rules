@@ -1,0 +1,34 @@
+# Cursor Assistant Rules Template
+# Cursor助手规则模板，扩展自base_template.yaml
+
+extends: base_template.yaml
+
+# Cursor特定配置
+cursor_specific:
+  venv_path: "./venv"
+  file_extension: ".cursorrules"
+  
+  # Cursor特定工具配置
+  tools:
+    llm:
+      default_provider: "anthropic"
+      providers:
+        - name: "anthropic"
+          model: "claude-3-sonnet-20240229"
+          priority: 1
+        - name: "openai"
+          model: "gpt-4"
+          priority: 2
+
+  # Cursor特定课程
+  lessons:
+    user_specified_lessons:
+      - "正确使用网站图片相对路径"
+      - "确保国际化查询的UTF-8编码处理"
+      - "在stderr中添加调试信息"
+      - "使用最新的可视化库样式名称"
+    system_learned_lessons:
+      - "代码补全需要考虑上下文"
+      - "智能建议要基于项目历史"
+      - "保持编辑器响应性能"
+      - "优化大文件处理策略"
