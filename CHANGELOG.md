@@ -1,3 +1,9 @@
+## v0.1.1 (2025-01-13)
+
+### Refactor
+
+- Rename project from ai-rules-cli to ai-rules
+
 ## v0.1.0 (2025-01-13)
 
 ### Feat
