@@ -1,3 +1,13 @@
+## v0.2.0 (2025-01-14)
+
+### Feat
+
+- **plugins**: implement unified response format for plugins
+
+### Fix
+
+- **plugin**: improve DuckDuckGo plugin code quality and testing
+
 ## v0.1.1 (2025-01-13)
 
 ### Refactor
