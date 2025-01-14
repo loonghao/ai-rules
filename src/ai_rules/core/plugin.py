@@ -26,7 +26,7 @@ class Plugin(abc.ABC):
     @abc.abstractmethod
     def get_command_spec(self) -> Dict[str, Any]:
         """Get command specification for Click.
-        
+
         Returns:
             Dictionary containing command specification:
             {
@@ -46,10 +46,10 @@ class Plugin(abc.ABC):
     @abc.abstractmethod
     def execute(self, **kwargs: Any) -> Any:
         """Execute the plugin functionality.
-        
+
         Args:
             **kwargs: Keyword arguments from command line.
-            
+
         Returns:
             Plugin execution result.
         """
@@ -76,12 +76,7 @@ class UVScriptPlugin(Plugin):
         """Get command specification for Click."""
         return {
             "params": [
-                {
-                    "name": "args",
-                    "type": click.STRING,
-                    "required": False,
-                    "help": "Arguments to pass to the script"
-                }
+                {"name": "args", "type": click.STRING, "required": False, "help": "Arguments to pass to the script"}
             ]
         }
 
@@ -97,10 +92,10 @@ class UVScriptPlugin(Plugin):
         cmd = [sys.executable, self.script_path]
         if args:
             cmd.extend(args.split())
-        
+
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            return result.stdout
+            subprocess.run(cmd, capture_output=True, text=True, check=True)
+            return ""
         except subprocess.CalledProcessError as e:
             raise click.ClickException(f"Script failed with error: {e.stderr}")
 
@@ -127,13 +122,13 @@ class PluginManager:
         Returns:
             The registered plugin class or instance.
         """
-        if not hasattr(plugin_class, 'name'):
+        if not hasattr(plugin_class, "name"):
             raise ValueError(f"Plugin {plugin_class.__name__} must have a 'name' attribute")
-        if not hasattr(plugin_class, 'description'):
+        if not hasattr(plugin_class, "description"):
             raise ValueError(f"Plugin {plugin_class.__name__} must have a 'description' attribute")
-        if not hasattr(plugin_class, 'get_command_spec'):
+        if not hasattr(plugin_class, "get_command_spec"):
             raise ValueError(f"Plugin {plugin_class.__name__} must implement get_command_spec")
-        if not hasattr(plugin_class, 'execute'):
+        if not hasattr(plugin_class, "execute"):
             raise ValueError(f"Plugin {plugin_class.__name__} must implement execute")
 
         cls._plugins[plugin_class.name] = plugin_class
@@ -191,7 +186,7 @@ class PluginManager:
                 plugin_eps = eps.select(group="ai_rules.plugins")
             else:  # Python < 3.10
                 plugin_eps = eps.get("ai_rules.plugins", [])
-                
+
             for ep in plugin_eps:
                 try:
                     plugin_class = ep.load()
@@ -210,13 +205,13 @@ class PluginManager:
             # 2. User's home directory plugins
             # 3. Virtual environment plugins
             plugin_dirs = [
-                Path(__file__).parent.parent / 'plugins',  # Built-in plugins
-                Path.home() / '.ai-rules' / 'plugins',     # User plugins
+                Path(__file__).parent.parent / "plugins",  # Built-in plugins
+                Path.home() / ".ai-rules" / "plugins",  # User plugins
             ]
-            
+
             # Add virtual environment plugins if in a virtual environment
             if sys.prefix != sys.base_prefix:
-                plugin_dirs.append(Path(sys.prefix) / 'lib' / 'ai-rules' / 'plugins')
+                plugin_dirs.append(Path(sys.prefix) / "lib" / "ai-rules" / "plugins")
         else:
             plugin_dirs = [Path(plugin_dir)]
 
@@ -228,21 +223,23 @@ class PluginManager:
             sys.path.insert(0, str(plugin_dir.parent))
 
             # Import all .py files in the plugins directory
-            for file in plugin_dir.glob('*.py'):
-                if file.name.startswith('_'):
+            for file in plugin_dir.glob("*.py"):
+                if file.name.startswith("_"):
                     continue
 
                 try:
                     module_name = file.stem
-                    module = importlib.import_module(f'plugins.{module_name}')
-                    
+                    module = importlib.import_module(f"plugins.{module_name}")
+
                     # Find plugin classes in the module
                     for name, obj in inspect.getmembers(module):
-                        if (inspect.isclass(obj) and 
-                            issubclass(obj, Plugin) and 
-                            obj != Plugin and
-                            hasattr(obj, 'name') and 
-                            hasattr(obj, 'description')):
+                        if (
+                            inspect.isclass(obj)
+                            and issubclass(obj, Plugin)
+                            and obj != Plugin
+                            and hasattr(obj, "name")
+                            and hasattr(obj, "description")
+                        ):
                             try:
                                 cls.register(obj)
                                 click.echo(f"Registered plugin: {obj.name}")
@@ -256,27 +253,18 @@ class PluginManager:
 
         # 3. Discover UV script plugins from virtual environment
         if sys.prefix != sys.base_prefix:
-            scripts_dir = Path(sys.prefix) / 'Scripts'  # Windows
+            scripts_dir = Path(sys.prefix) / "Scripts"  # Windows
             if not scripts_dir.exists():
-                scripts_dir = Path(sys.prefix) / 'bin'  # Unix
-            
+                scripts_dir = Path(sys.prefix) / "bin"  # Unix
+
             if scripts_dir.exists():
-                for script in scripts_dir.glob('*.py'):
+                for script in scripts_dir.glob("*.py"):
                     try:
                         # Get script metadata using uv
-                        result = subprocess.run(
-                            ["uv", "script", "info", str(script)],
-                            capture_output=True,
-                            text=True,
-                            check=True
-                        )
+                        subprocess.run(["uv", "script", "info", str(script)], capture_output=True, check=True)
                         # Register script as plugin
                         name = script.stem
-                        cls.register_uv_script(
-                            script_path=str(script),
-                            name=name,
-                            description=f"UV script: {name}"
-                        )
+                        cls.register_uv_script(script_path=str(script), name=name, description=f"UV script: {name}")
                     except subprocess.CalledProcessError:
                         # Skip scripts that aren't UV scripts
                         continue

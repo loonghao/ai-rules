@@ -8,7 +8,7 @@ import nox
 
 
 # Constants
-PACKAGE_NAME = "ai_rules"
+PACKAGE_NAME = "src/ai_rules"
 THIS_ROOT = Path(__file__).parent
 PROJECT_ROOT = THIS_ROOT.parent
 
@@ -24,7 +24,7 @@ def pytest(session: nox.Session) -> None:
     - Run with verbose output: nox -s pytest -- -v
     - Combine options: nox -s pytest -- tests/ai_rules/test_core.py -v -k "test_specific_function"
     """
-    session.install(".[dev]")
+    session.install(".[test]")
     test_root = THIS_ROOT / "tests"
 
     # Print debug information
