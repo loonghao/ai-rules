@@ -38,7 +38,6 @@ def pytest(session: nox.Session) -> None:
 
     pytest_args = [
         "--tb=short",  # Shorter traceback format
-        "--showlocals",  # Show local variables in tracebacks
         "-ra",  # Show extra test summary info
         f"--cov={PACKAGE_NAME}",
         "--cov-report=term-missing",  # Show missing lines in terminal
@@ -53,9 +52,7 @@ def pytest(session: nox.Session) -> None:
         "pytest",
         *pytest_args,
         env={
-            "PYTHONPATH": THIS_ROOT.as_posix(),
-            "PYTHONDEVMODE": "1",  # Enable development mode
-            "PYTHONWARNINGS": "always",  # Show all warnings
+            "PYTHONPATH": (THIS_ROOT / "src").as_posix(),
         },
     )
 

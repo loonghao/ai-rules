@@ -19,6 +19,46 @@ tools:
       venv_create: "uv venv"
       venv_activate: ".venv/Scripts/activate"  # Windows路径
 
+  plugins:
+    command_prefix: "uvx ai-rules plugin"
+    output_paths:
+      app_dir: "${HOME}/.ai-rules"
+      images_dir: "${APP_DIR}/images"
+      downloads_dir: "${APP_DIR}/downloads"
+      news_dir: "${APP_DIR}/news"
+      web_content_dir: "${APP_DIR}/web-content"
+      
+    available_plugins:
+      - name: "search"
+        description: "搜索网页内容"
+        command: "search --query {query}"
+        output_dir: "${WEB_CONTENT_DIR}"
+        
+      - name: "image"
+        description: "搜索图片"
+        command: "image --query {query}"
+        output_dir: "${IMAGES_DIR}"
+        
+      - name: "news"
+        description: "搜索新闻"
+        command: "news --query {query}"
+        output_dir: "${NEWS_DIR}"
+        
+      - name: "translate"
+        description: "翻译文本"
+        command: "translate --text {text} --target-lang {target_lang}"
+        output_dir: "${DOWNLOADS_DIR}"
+        
+      - name: "docs"
+        description: "搜索API文档"
+        command: "docs --query {query}"
+        output_dir: "${WEB_CONTENT_DIR}"
+        
+      - name: "local"
+        description: "本地文件搜索"
+        command: "local --query {query}"
+        output_dir: "${APP_DIR}/local-search"
+
   llm:
     providers:
       - name: openai

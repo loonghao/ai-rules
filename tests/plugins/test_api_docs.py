@@ -4,9 +4,7 @@
 import json
 
 # Import third-party modules
-import aiohttp
 import pytest
-from bs4 import BeautifulSoup
 
 # Import local modules
 from ai_rules.plugins.api_docs import APIDocs
@@ -16,6 +14,7 @@ from ai_rules.plugins.api_docs import APIDocs
 def api_docs_plugin():
     """Fixture for creating an APIDocs instance."""
     return APIDocs()
+
 
 @pytest.fixture
 def mock_html_content():
@@ -37,23 +36,15 @@ def mock_html_content():
     </html>
     """
 
+
 @pytest.mark.asyncio
 async def test_detect_search_endpoint(api_docs_plugin):
     """Test the detection of search endpoints in HTML content."""
-    html_content = """
-    <html>
-        <body>
-            <form action="/search" method="get">
-                <input type="text" name="q">
-                <button type="submit">Search</button>
-            </form>
-        </body>
-    </html>
-    """
     endpoints = await api_docs_plugin._detect_search_endpoint("https://example.com")
     assert endpoints is not None
     assert endpoints["type"] == "custom"
     assert endpoints["search_url"] == "https://example.com/search.html?q={query}"
+
 
 @pytest.mark.asyncio
 async def test_extract_relevant_sections(api_docs_plugin, mock_html_content):
@@ -63,6 +54,7 @@ async def test_extract_relevant_sections(api_docs_plugin, mock_html_content):
     assert sections is not None
     assert query in sections
 
+
 @pytest.mark.asyncio
 async def test_execute_with_content(api_docs_plugin, tmp_path):
     """Test the execute method with content parameter."""
@@ -70,11 +62,7 @@ async def test_execute_with_content(api_docs_plugin, tmp_path):
     output_dir = tmp_path / "api-docs"
     content = "test_query"
 
-    result = await api_docs_plugin.execute(
-        url=url,
-        output_dir=str(output_dir),
-        content=content
-    )
+    result = await api_docs_plugin.execute(url=url, output_dir=str(output_dir), content=content)
 
     assert isinstance(result, str)
     response = json.loads(result)
@@ -85,16 +73,14 @@ async def test_execute_with_content(api_docs_plugin, tmp_path):
     assert "query" in response["data"]
     assert "message" in response
 
+
 @pytest.mark.asyncio
 async def test_execute_without_content(api_docs_plugin, tmp_path):
     """Test the execute method without content parameter."""
     url = "https://example.com/api"
     output_dir = tmp_path / "api-docs"
 
-    result = await api_docs_plugin.execute(
-        url=url,
-        output_dir=str(output_dir)
-    )
+    result = await api_docs_plugin.execute(url=url, output_dir=str(output_dir))
 
     assert isinstance(result, str)
     response = json.loads(result)
@@ -102,6 +88,7 @@ async def test_execute_without_content(api_docs_plugin, tmp_path):
     assert "url" in response["data"]
     assert "query" in response["data"]
     assert "message" in response
+
 
 def test_click_command(api_docs_plugin):
     """Test click command configuration."""
@@ -114,33 +101,23 @@ def test_click_command(api_docs_plugin):
     assert "output_dir" in param_names
     assert "content" in param_names
 
+
 def test_format_response(api_docs_plugin):
     """Test response formatting."""
-    data = {
-        "url": "https://example.com/api",
-        "pages_scraped": 1,
-        "output_dir": "/tmp/api-docs",
-        "query": "test"
-    }
+    data = {"url": "https://example.com/api", "pages_scraped": 1, "output_dir": "/tmp/api-docs", "query": "test"}
     message = "Test message"
-    response = {
-        "data": data,
-        "message": message
-    }
+    response = {"data": data, "message": message}
     result = json.dumps(response, indent=2, ensure_ascii=False)
     assert isinstance(result, str)
     parsed = json.loads(result)
     assert parsed["data"] == data
     assert parsed["message"] == message
 
+
 def test_format_error(api_docs_plugin):
     """Test error formatting."""
     error_msg = "Test error"
-    data = {
-        "error": error_msg,
-        "url": "https://example.com/api",
-        "query": "test"
-    }
+    data = {"error": error_msg, "url": "https://example.com/api", "query": "test"}
     result = json.dumps(data, indent=2, ensure_ascii=False)
     assert isinstance(result, str)
     parsed = json.loads(result)

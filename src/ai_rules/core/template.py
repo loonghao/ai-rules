@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Template converter for AI assistant rules.
-This module handles the conversion of YAML templates to Markdown format.
+This module handles the conversion of YAML templates to Markdown format using Jinja2.
 """
 
 import datetime
@@ -9,10 +9,11 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 import yaml
+from jinja2 import Environment, FileSystemLoader
 
 
 class RuleConverter:
-    """Converts YAML rules to Markdown format for different AI assistants."""
+    """Converts YAML rules to Markdown format for different AI assistants using Jinja2 templates."""
 
     def __init__(self, template_dir: str) -> None:
         """
@@ -25,6 +26,11 @@ class RuleConverter:
         self.base_template: Dict[str, Any] = self._load_yaml("base_template.yaml")
         self.markdown_template_dir: Path = self.template_dir / "markdown_templates"
 
+        # Initialize Jinja2 environment
+        self.jinja_env = Environment(
+            loader=FileSystemLoader(str(self.markdown_template_dir)), trim_blocks=True, lstrip_blocks=True
+        )
+
     def _load_yaml(self, filename: str) -> Dict[str, Any]:
         """
         Load YAML file and return its contents.
@@ -36,44 +42,43 @@ class RuleConverter:
             Dict containing YAML contents
         """
         try:
-            with open(self.template_dir / filename, encoding="utf-8") as f:
+            with open(self.template_dir / filename, "r", encoding="utf-8") as f:
                 return yaml.safe_load(f)
-        except FileNotFoundError:
-            print(f"Error: YAML file '{filename}' not found.")
+        except Exception as e:
+            print(f"Error: Failed to load YAML file '{filename}': {e!s}")
             return {}
 
     def _load_markdown_template(self, template_name: str) -> str:
         """
-        Load Markdown template file.
+        Load Markdown template file using Jinja2.
 
         Args:
             template_name: Name of the markdown template
 
         Returns:
-            String containing template content
+            Jinja2 Template object
         """
         try:
-            with open(self.markdown_template_dir / template_name, encoding="utf-8") as f:
-                return f.read()
-        except FileNotFoundError:
-            print(f"Error: Markdown template '{template_name}' not found.")
-            return ""
+            return self.jinja_env.get_template(template_name)
+        except Exception as e:
+            print(f"Error: Failed to load markdown template '{template_name}': {e!s}")
+            return None
 
     def _format_llm_providers(self, providers: List[Dict[str, str]]) -> str:
         """Format LLM providers list for markdown."""
-        return "\n".join([f"- {p['name']}: {p['model']}" for p in providers])
+        return "\n".join([f"- {p['name']}: {p['model']} (优先级: {p['priority']})" for p in providers])
 
     def _format_code_style(self, guidelines: List[str]) -> str:
         """Format code style guidelines for markdown."""
-        return "\n".join([f"- {guideline}" for guideline in guidelines])
+        return "\n".join([f"- {g}" for g in guidelines])
 
     def _format_development(self, guidelines: List[str]) -> str:
         """Format development guidelines for markdown."""
-        return "\n".join([f"- {guideline}" for guideline in guidelines])
+        return "\n".join([f"- {g}" for g in guidelines])
 
     def _format_project(self, guidelines: List[str]) -> str:
         """Format project guidelines for markdown."""
-        return "\n".join([f"- {guideline}" for guideline in guidelines])
+        return "\n".join([f"- {g}" for g in guidelines])
 
     def _merge_configs(self, base_config: Dict[str, Any], specific_config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -98,7 +103,7 @@ class RuleConverter:
 
     def convert_to_markdown(self, assistant_type: str, output_dir: str) -> None:
         """
-        Convert YAML configuration to Markdown format.
+        Convert YAML configuration to Markdown format using Jinja2 templates.
 
         Args:
             assistant_type: Type of assistant (cursor/windsurf/cli)
@@ -111,7 +116,9 @@ class RuleConverter:
         config = self._merge_configs(self.base_template, assistant_template.get(f"{assistant_type}_specific", {}))
 
         # Load markdown template
-        md_template = self._load_markdown_template("base.md")
+        template = self._load_markdown_template("base.md")
+        if template is None:
+            return
 
         # Prepare template variables
         template_vars = {
@@ -123,10 +130,16 @@ class RuleConverter:
             "code_style": self._format_code_style(config["guidelines"]["code_style"]),
             "development": self._format_development(config["guidelines"]["development"]),
             "project": self._format_project(config["guidelines"]["project"]),
+            # Add any additional template variables here
+            "config": config,  # Pass the entire config for flexible template access
         }
 
-        # Generate markdown content
-        markdown_content = md_template.format(**template_vars)
+        # Generate markdown content using Jinja2
+        try:
+            markdown_content = template.render(**template_vars)
+        except Exception as e:
+            print(f"Error: Failed to render template: {e!s}")
+            return
 
         # Save to file
         output_path = Path(output_dir)

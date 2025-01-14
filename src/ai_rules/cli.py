@@ -4,11 +4,10 @@ AI Rules CLI tool for managing AI assistant configurations and running AI-powere
 """
 
 # Import built-in modules
-import json
 import logging
 import os
 import sys
-from typing import Any, Dict, Optional, Type, TypeVar
+from typing import Optional, Type, TypeVar
 
 # Import third-party modules
 import click
@@ -33,17 +32,16 @@ def setup_logging(debug: bool = False) -> None:
     env_debug = os.environ.get("AI_RULES_DEBUG", "").lower() in ("1", "true", "yes")
     log_level = logging.DEBUG if (debug or env_debug) else logging.INFO
 
-    # Configure logging
+    # Configure logging with UTF-8 encoding
     logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        level=log_level, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", encoding="utf-8"
     )
 
     # Set default encoding to UTF-8
     if sys.stdout.encoding != "utf-8":
-        sys.stdout = open(sys.stdout.fileno(), mode="w", encoding="utf-8", buffering=1)
+        sys.stdout.reconfigure(encoding="utf-8")
     if sys.stderr.encoding != "utf-8":
-        sys.stderr = open(sys.stderr.fileno(), mode="w", encoding="utf-8", buffering=1)
+        sys.stderr.reconfigure(encoding="utf-8")
 
 
 @click.group()
@@ -145,96 +143,43 @@ def create_plugin_command(plugin_class: Type[T]) -> click.Command:
     try:
         # Create plugin instance
         plugin = plugin_class()
-        plugin_name = plugin.metadata.name
-        if not plugin_name or plugin_name == "unknown":
-            raise click.ClickException("Plugin name is required")
 
-        logger.debug("Creating command for plugin: %s", plugin_name)
-
-        # Create command function dynamically
-        def create_command_function(**kwargs: Dict[str, Any]) -> None:
-            try:
-                # Handle string encoding for all string parameters
-                for key, value in kwargs.items():
-                    if isinstance(value, str):
-                        try:
-                            # Try to decode if it's bytes-like
-                            kwargs[key] = value.encode("latin1").decode("utf-8")
-                        except (UnicodeEncodeError, UnicodeDecodeError, AttributeError):
-                            # If it fails, keep the original value
-                            pass
-
-                logger.debug("Executing plugin %s with parameters: %s", plugin_name, kwargs)
-                # Execute plugin
-                result = plugin(**kwargs)
-                # Format and display result
-                if isinstance(result, (dict, list)):
-                    click.echo(click.style(json.dumps(result, indent=2, ensure_ascii=False), fg="green"))
-                else:
-                    click.echo(click.style(str(result), fg="green"))
-            except Exception as e:
-                logger.exception("Plugin execution failed: %s", e)
-                raise click.ClickException(str(e)) from e
-
-        # Create command and add parameters
-        command = click.command(name=plugin_name, help=plugin.metadata.description)(create_command_function)
-        spec = plugin.get_command_spec()
-        if not isinstance(spec, dict):
-            raise click.ClickException("Invalid command specification")
-
-        logger.debug("Command specification: %s", spec)
-
-        for param in spec.get("params", []):
-            if not isinstance(param, dict):
-                raise click.ClickException("Invalid parameter specification")
-
-            param_name = param.get("name")
-            if not param_name:
-                raise click.ClickException("Parameter name is required")
-
-            param_type = param.get("type", click.STRING)
-            required = param.get("required", False)
-            help_text = param.get("help", "")
-
-            logger.debug("Adding parameter: name=%s, type=%s, required=%s", param_name, param_type, required)
-
-            command = click.option(
-                f"--{param_name}",
-                type=param_type,
-                required=required,
-                help=help_text,
-            )(command)
+        # Get Click command from plugin
+        command = plugin.click_command
+        if not command:
+            raise click.ClickException("Plugin must provide a Click command")
 
         return command
+
     except Exception as e:
-        logger.exception("Failed to create command for plugin %s: %s", plugin_class.__name__, e)
-        click.echo(f"Error registering plugin {plugin_class.__name__}: {e}", err=True)
-        return None
+        logger.exception("Failed to create command: %s", e)
+        raise click.ClickException(str(e)) from e
 
 
 def register_plugins() -> None:
-    """Register all available plugins."""
+    """Register all plugins."""
     try:
-        # Create plugin manager instance to trigger plugin loading
-        plugin_manager = PluginManager()
-        logger.debug("Created plugin manager instance")
-
+        # Import plugins directly
+        from ai_rules.plugins import get_plugins
+        plugin_classes = get_plugins()
+        
         # Register plugin commands
-        for plugin_name, plugin_class in plugin_manager.get_all_plugins().items():
+        for plugin_class in plugin_classes:
             try:
-                logger.debug("Registering plugin: %s", plugin_name)
-                # Create command for plugin
-                command = create_plugin_command(plugin_class.__class__)
+                plugin_instance = plugin_class()
+                logger.debug("Registering plugin: %s", plugin_instance.name)
+                # Get command from plugin instance
+                command = plugin_instance.click_command
                 if command is not None:
                     # Add command to plugin group
                     plugin.add_command(command)
-                    click.echo(f"Registered plugin command: {plugin_name}")
+                    logger.debug("Registered plugin command: %s", plugin_instance.name)
             except Exception as e:
-                logger.exception("Failed to register plugin %s: %s", plugin_name, e)
-                click.echo(f"Error registering plugin {plugin_name}: {e}", err=True)
+                logger.exception("Failed to register plugin %s: %s", plugin_class.__name__, e)
+                logger.error(f"Error registering plugin {plugin_class.__name__}: {e}")
     except Exception as e:
         logger.exception("Failed to register plugins: %s", e)
-        click.echo(f"Error registering plugins: {e}", err=True)
+        logger.error(f"Error registering plugins: {e}")
 
 
 # Register plugins when module is loaded

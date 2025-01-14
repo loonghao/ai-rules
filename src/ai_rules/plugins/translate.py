@@ -2,34 +2,35 @@
 
 # Import built-in modules
 import asyncio
+import json
 import logging
 from typing import Any, Dict, Optional
 
 # Import third-party modules
 import click
-from googletrans import LANGUAGES, Translator
-from pydantic import BaseModel, ConfigDict, Field
+from deep_translator import GoogleTranslator
+from pydantic import BaseModel
 
 # Import local modules
 from ai_rules.core.plugin import Plugin
 
-# Configure logging
+# Configure logger
 logger: logging.Logger = logging.getLogger(__name__)
 
 
 class TranslateInput(BaseModel):
     """Input parameters for translation."""
 
-    text: str = Field(..., description="Text to translate")
-    target: Optional[str] = Field("en", description="Target language code")
-    source: Optional[str] = Field(None, description="Source language code")
+    text: str
+    target: Optional[str] = "en"
+    source: Optional[str] = None
 
-    model_config: ConfigDict = ConfigDict(
-        title="Translation Input",
-        description="Parameters for translation request",
-        frozen=True,
-        json_schema_extra={"examples": [{"text": "Hello world", "target": "zh", "source": "en"}]},
-    )
+    model_config: Dict[str, Any] = {
+        "title": "Translation Input",
+        "description": "Parameters for translation request",
+        "frozen": True,
+        "json_schema_extra": {"examples": [{"text": "Hello world", "target": "zh", "source": "en"}]},
+    }
 
     @property
     def source_code(self) -> str:
@@ -47,206 +48,109 @@ class TranslateInput(BaseModel):
 class TranslateOutput(BaseModel):
     """Output from translation."""
 
-    text: str = Field(..., description="Translated text")
-    source: str = Field(..., description="Detected source language code")
-    target: str = Field(..., description="Target language code")
+    text: str
+    source: str
+    target: str
 
-    model_config: ConfigDict = ConfigDict(
-        title="Translation Output",
-        description="Result of translation request",
-        frozen=True,
-        json_schema_extra={"examples": [{"text": "你好世界", "source": "en", "target": "zh"}]},
-    )
+    model_config: Dict[str, Any] = {
+        "title": "Translation Output",
+        "description": "Result of translation request",
+        "frozen": True,
+        "json_schema_extra": {"examples": [{"text": "", "source": "en", "target": "zh"}]},
+    }
+
+
+class TranslationResult(BaseModel):
+    """Model for translation result."""
+
+    source_text: str
+    translated_text: str
+    source_lang: str
+    target_lang: str
 
 
 class TranslatePlugin(Plugin):
     """Translation plugin."""
 
-    name = "translate"
-    description = "Translate text between languages"
-    version = "1.0.0"
-    author = "AI Rules Team"
-
-    def __init__(self) -> None:
-        """Initialize plugin instance."""
+    def __init__(self):
+        """Initialize the plugin."""
         super().__init__()
-        self._translator = Translator()
+        self._translator = None
 
-    def get_command_spec(self) -> Dict[str, Any]:
-        """Get command specification for Click."""
-        return {
-            "params": [
-                {
-                    "name": "text",
-                    "type": click.STRING,
-                    "required": True,
-                    "help": "Text to translate",
-                },
-                {
-                    "name": "source",
-                    "type": click.STRING,
-                    "required": False,
-                    "help": "Source language code (auto-detect if not specified)",
-                },
-                {
-                    "name": "target",
-                    "type": click.STRING,
-                    "required": False,
-                    "help": "Target language code (default: en)",
-                },
-            ]
-        }
+    @property
+    def name(self) -> str:
+        """Get plugin name."""
+        return "translate"
 
-    def validate(self, **kwargs: Dict[str, Any]) -> bool:
-        """Validate plugin input.
+    @property
+    def description(self) -> str:
+        """Get plugin description."""
+        return "Translate text between languages using Google Translate"
 
-        Args:
-            **kwargs: Keyword arguments from command line.
+    @property
+    def click_command(self) -> click.Command:
+        """Get the click command for this plugin.
 
         Returns:
-            True if input is valid, False otherwise.
+            Click command
         """
-        try:
-            logger.debug("Validating input: %s", kwargs)
 
-            # Check required parameters
-            if "text" not in kwargs:
-                logger.error("Missing required parameter: text")
-                return False
+        @click.command(name=self.name, help=self.description)
+        @click.argument("text")
+        @click.option("--source-lang", "source_lang", default="auto")
+        @click.option("--target-lang", "target_lang", default="en")
+        def command(text, source_lang, target_lang):
+            """Translate text between languages.
 
-            # Convert and validate parameters
-            text = str(kwargs["text"])
-            source = str(kwargs["source"]) if "source" in kwargs and kwargs["source"] is not None else None
-            target = str(kwargs["target"]) if "target" in kwargs and kwargs["target"] is not None else "en"
+            Args:
+                text: Text to translate
+                source_lang: Source language code
+                target_lang: Target language code
+            """
+            return asyncio.run(self.execute(text=text, source_lang=source_lang, target_lang=target_lang))
 
-            logger.debug("Converted parameters: text=%s, source=%s, target=%s", text, source, target)
+        return command
 
-            # Validate language codes
-            if source and source.lower() not in LANGUAGES and source.lower() != "auto":
-                logger.error("Invalid source language code: %s", source)
-                return False
-            if target and target.lower() not in LANGUAGES:
-                logger.error("Invalid target language code: %s", target)
-                return False
-
-            # Create input model
-            input_data = TranslateInput(text=text, source=source, target=target)
-            logger.debug("Created input model: %s", input_data.model_dump())
-
-            return True
-        except Exception as e:
-            logger.exception("Validation failed: %s", e)
-            return False
-
-    async def _translate_async(self, text: str, source: Optional[str], target: str) -> Dict[str, Any]:
-        """Perform translation asynchronously.
-
-        Args:
-            text: Text to translate.
-            source: Source language code.
-            target: Target language code.
-
-        Returns:
-            Dict containing translation results.
-
-        Raises:
-            Exception: If translation fails.
-        """
-        # Create input model
-        input_data = TranslateInput(text=text, source=source, target=target)
-        logger.debug("Created input model: %s", input_data.model_dump())
-
-        # Perform translation
-        result = await self._translator.translate(
-            input_data.text,
-            src=input_data.source_code,
-            dest=input_data.target_code,
-        )
-        logger.debug("Translation result: %s", result)
-
-        # Format output
-        output = TranslateOutput(
-            text=result.text,
-            source=result.src,
-            target=result.dest,
-        )
-        logger.debug("Created output model: %s", output.model_dump())
-
-        return output.model_dump()
-
-    def _translate_sync(self, text: str, source: Optional[str], target: str) -> Dict[str, Any]:
-        """Perform translation synchronously.
-
-        Args:
-            text: Text to translate.
-            source: Source language code.
-            target: Target language code.
-
-        Returns:
-            Dict containing translation results.
-
-        Raises:
-            Exception: If translation fails.
-        """
-        # Create input model
-        input_data = TranslateInput(text=text, source=source, target=target)
-        logger.debug("Created input model: %s", input_data.model_dump())
-
-        # Perform translation
-        result = self._translator.translate(
-            input_data.text,
-            src=input_data.source_code,
-            dest=input_data.target_code,
-        )
-        logger.debug("Translation result: %s", result)
-
-        # Format output
-        output = TranslateOutput(
-            text=result.text,
-            source=result.src,
-            target=result.dest,
-        )
-        logger.debug("Created output model: %s", output.model_dump())
-
-        return output.model_dump()
-
-    def execute(self, **kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, **kwargs) -> str:
         """Execute translation.
 
         Args:
-            **kwargs: Keyword arguments from command line.
+            **kwargs: Keyword arguments
+                text: Text to translate
+                source_lang: Source language code
+                target_lang: Target language code
 
         Returns:
-            Dict containing translation results.
-
-        Raises:
-            click.ClickException: If translation fails.
+            Formatted string containing translation result
         """
         try:
-            logger.debug("Executing translation with parameters: %s", kwargs)
+            text = kwargs.get("text")
+            source_lang = kwargs.get("source_lang", "auto")
+            target_lang = kwargs.get("target_lang", "en")
 
-            # Convert and validate input
-            text = str(kwargs["text"])
-            source = str(kwargs["source"]) if "source" in kwargs and kwargs["source"] is not None else None
-            target = str(kwargs["target"]) if "target" in kwargs and kwargs["target"] is not None else "en"
+            # Create translator if not exists
+            if self._translator is None:
+                self._translator = GoogleTranslator(source=source_lang, target=target_lang)
+            else:
+                # Update translator settings if needed
+                if self._translator.source != source_lang or self._translator.target != target_lang:
+                    self._translator = GoogleTranslator(source=source_lang, target=target_lang)
 
-            logger.debug("Converted parameters: text=%s, source=%s, target=%s", text, source, target)
+            # Perform translation
+            translated = self._translator.translate(text)
 
-            try:
-                # First try synchronous translation
-                return self._translate_sync(text, source, target)
-            except AttributeError as e:
-                if "'coroutine'" in str(e):
-                    # If we get a coroutine error, try asynchronous translation
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    try:
-                        return loop.run_until_complete(self._translate_async(text, source, target))
-                    finally:
-                        loop.close()
-                else:
-                    raise
+            # Create response
+            result = TranslationResult(
+                source_text=text, translated_text=translated, source_lang=source_lang, target_lang=target_lang
+            )
+
+            # Format and print response
+            response = self.format_response(
+                data=result.model_dump(), message=f"Successfully translated text from {source_lang} to {target_lang}"
+            )
+            print(response)
+            return response
 
         except Exception as e:
-            logger.exception("Translation failed: %s", e)
-            raise click.ClickException(f"Translation failed: {str(e)}") from e
+            logger.error("Error executing translation: %s", str(e))
+            return json.dumps({"error": str(e)}, indent=2, ensure_ascii=False)

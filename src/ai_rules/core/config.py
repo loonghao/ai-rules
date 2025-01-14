@@ -12,6 +12,71 @@ import tomli
 import tomli_w
 
 
+def get_app_dir() -> Path:
+    """Get the application directory.
+
+    Returns:
+        Path to the application directory.
+    """
+    # Use project directory instead of user home
+    app_dir = Path().home() / ".ai-rules"
+    app_dir.mkdir(parents=True, exist_ok=True)
+    return app_dir
+
+
+def get_images_dir() -> Path:
+    """Get the images directory.
+
+    Returns:
+        Path to the images directory.
+    """
+    images_dir = get_app_dir() / "images"
+    images_dir.mkdir(parents=True, exist_ok=True)
+    return images_dir
+
+
+def get_downloads_dir() -> Path:
+    """Get the downloads directory.
+
+    Returns:
+        Path to the downloads directory.
+    """
+    downloads_dir = get_app_dir() / "downloads"
+    downloads_dir.mkdir(parents=True, exist_ok=True)
+    return downloads_dir
+
+
+def get_news_dir() -> Path:
+    """Get the news directory.
+
+    Returns:
+        Path to the news directory.
+    """
+    news_dir = get_app_dir() / "news"
+    news_dir.mkdir(parents=True, exist_ok=True)
+    return news_dir
+
+
+def get_web_content_dir() -> Path:
+    """Get the web content directory.
+
+    Returns:
+        Path to the web content directory.
+    """
+    web_content_dir = get_app_dir() / "web-content"
+    web_content_dir.mkdir(parents=True, exist_ok=True)
+    return web_content_dir
+
+
+def get_image_dir() -> Path:
+    """Get the image directory path.
+
+    Returns:
+        Path to the image directory
+    """
+    return get_app_dir() / "images"
+
+
 def get_config_path() -> Path:
     """Get the path to the configuration file.
 
@@ -24,8 +89,7 @@ def get_config_path() -> Path:
         return project_config
 
     # Fallback to user config
-    user_config = Path.home() / ".ai-rules" / "config.toml"
-    user_config.parent.mkdir(parents=True, exist_ok=True)
+    user_config = get_app_dir() / "config.toml"
     if not user_config.exists():
         user_config.write_text("[tool.ai-rules]\nscripts = {}\n")
     return user_config

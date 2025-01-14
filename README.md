@@ -44,6 +44,9 @@ uvx ai-rules plugin search --query "Python best practices" --limit 5
 
 # Translate text (auto-detect source language)
 uvx ai-rules plugin translate --text "Hello World" --target zh
+
+# Web scraping (automatically installs required browser)
+uvx ai-rules plugin web-scraper --urls https://example.com --format markdown
 ```
 
 ### Debug Mode
@@ -271,6 +274,34 @@ Example response:
 }
 ```
 
+3. **Web Scraper Plugin** ([source](src/ai_rules/plugins/web_scraper.py))
+   - Web scraping using Playwright
+   - Features:
+     - Automatic browser installation
+     - Configurable URL and format
+
+```bash
+# Basic web scraping
+uvx ai-rules plugin web-scraper --urls https://example.com --format markdown
+```
+
+Example response:
+```json
+{
+  "status": "success",
+  "message": "Scraped content from https://example.com",
+  "data": {
+    "content": "# Example Website\n\nThis is an example website.",
+    "format": "markdown"
+  },
+  "metadata": {
+    "plugin_name": "web-scraper",
+    "plugin_version": "1.0.0",
+    "timestamp": "2025-01-14T18:04:54+08:00"
+  }
+}
+```
+
 ### Using Your Plugin
 
 Once installed, your plugin will be automatically discovered and registered:
@@ -314,6 +345,7 @@ src/ai_rules/
 ├── plugins/          # Built-in plugins
 │   ├── duckduckgo_search.py  # Search plugin
 │   └── translate.py          # Translation plugin
+│   └── web_scraper.py        # Web scraper plugin
 ├── templates/        # Rule templates
 ├── cli.py           # CLI implementation
 └── __init__.py

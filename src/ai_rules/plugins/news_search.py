@@ -1,18 +1,18 @@
-"""DuckDuckGo search plugin."""
+"""DuckDuckGo news search plugin."""
 
 # Import built-in modules
-import asyncio
 import json
 import logging
 import os
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, List
 
 # Import third-party modules
 import click
 from duckduckgo_search import DDGS
 from pydantic import BaseModel
+
+from ai_rules.core.config import get_news_dir
 
 # Import local modules
 from ai_rules.core.plugin import Plugin
@@ -21,37 +21,35 @@ from ai_rules.core.plugin import Plugin
 logger: logging.Logger = logging.getLogger(__name__)
 
 
-def get_web_content_dir() -> Path:
-    return Path(__file__).parent / "web_content"
-
-
-class SearchResult(BaseModel):
-    """Model for search results."""
+class NewsResult(BaseModel):
+    """Model for news results."""
 
     title: str
     link: str
     snippet: str
+    source: str
+    date: str
 
 
-class SearchResponse(BaseModel):
-    """Response model for search."""
+class NewsResponse(BaseModel):
+    """Response model for news search."""
 
-    results: List[SearchResult]
+    results: List[NewsResult]
     total: int
 
 
-class SearchPlugin(Plugin):
-    """DuckDuckGo search plugin."""
+class NewsPlugin(Plugin):
+    """DuckDuckGo news search plugin."""
 
     @property
     def name(self) -> str:
         """Get plugin name."""
-        return "search"
+        return "news"
 
     @property
     def description(self) -> str:
         """Get plugin description."""
-        return "Search the web using DuckDuckGo"
+        return "Search news using DuckDuckGo"
 
     @property
     def click_command(self) -> click.Command:
@@ -63,38 +61,29 @@ class SearchPlugin(Plugin):
 
         @click.command(name=self.name, help=self.description)
         @click.argument("query")
-        @click.option("--region", default="wt-wt", help="Region for search results (default: wt-wt)")
-        @click.option(
-            "--safesearch",
-            type=click.Choice(["on", "moderate", "off"]),
-            default="moderate",
-            help="Safe search level (default: moderate)",
-        )
+        @click.option("--region", default="wt-wt", help="Region for news results (default: wt-wt)")
         @click.option(
             "--time",
-            type=click.Choice(["d", "w", "m", "y"]),
-            default=None,
-            help="Time range: d=day, w=week, m=month, y=year",
+            type=click.Choice(["d", "w", "m"]),
+            default="w",
+            help="Time range: d=day, w=week, m=month (default: w)",
         )
         @click.option("--max-results", default=10, help="Maximum number of results to return (default: 10)")
-        def command(query, region, safesearch, time, max_results):
-            """Search the web using DuckDuckGo.
+        def command(query, region, time, max_results):
+            """Search for news articles.
 
             Args:
-                query: Search query
-                region: Region for search results
-                safesearch: Safe search level
+                query: Search query for finding news articles
+                region: Region for news results
                 time: Time range
                 max_results: Maximum number of results to return
             """
-            return asyncio.run(
-                self.execute(query=query, region=region, safesearch=safesearch, time=time, max_results=max_results)
-            )
+            return self.execute(query=query, region=region, time=time, max_results=max_results)
 
         return command
 
     def execute(self, **kwargs) -> str:
-        """Execute DuckDuckGo search.
+        """Execute news search.
 
         Args:
             **kwargs: Keyword arguments
@@ -112,29 +101,35 @@ class SearchPlugin(Plugin):
             region = kwargs.get("region", "wt-wt")
 
             # Create output directory if it doesn't exist
-            output_dir = str(get_web_content_dir())
+            output_dir = str(get_news_dir())
             os.makedirs(output_dir, exist_ok=True)
 
             # Create filenames for both JSON and Markdown
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            base_name = f"duckduckgo_search_{timestamp}"
+            base_name = f"news_search_{timestamp}"
             json_file = os.path.join(output_dir, f"{base_name}.json")
             markdown_file = os.path.join(output_dir, f"{base_name}.md")
 
-            # Search DuckDuckGo
-            logger.debug("Searching DuckDuckGo with query: %s, region: %s", query, region)
+            # Search news
+            logger.debug("Searching news with query: %s, region: %s", query, region)
             results = []
             with DDGS() as ddgs:
-                for r in ddgs.text(query, region=region):
+                for r in ddgs.news(query, region=region):
                     if len(results) >= max_results:
                         break
-                    logger.debug("Raw search result: %s", r)
-                    result = SearchResult(title=r.get("title", ""), link=r.get("link", ""), snippet=r.get("body", ""))
-                    logger.debug("Parsed search result: %s", result)
+                    logger.debug("Raw news result: %s", r)
+                    result = NewsResult(
+                        title=r.get("title", ""),
+                        link=r.get("url", ""),
+                        snippet=r.get("body", ""),
+                        source=r.get("source", ""),
+                        date=r.get("date", ""),
+                    )
+                    logger.debug("Parsed news result: %s", result)
                     results.append(result)
 
             # Create response
-            response = SearchResponse(results=results, total=len(results))
+            response = NewsResponse(results=results, total=len(results))
 
             # Save as JSON
             with open(json_file, "w", encoding="utf-8") as f:
@@ -147,15 +142,17 @@ class SearchPlugin(Plugin):
                 f.write(f"query: {query}\n")
                 f.write(f"date: {datetime.now().isoformat()}\n")
                 f.write(f"total_results: {len(results)}\n")
-                f.write("source: duckduckgo-search\n")
+                f.write("source: duckduckgo-news\n")
                 f.write("---\n\n")
 
                 # Add title
-                f.write(f"# Search Results: {query}\n\n")
+                f.write(f"# News Search Results: {query}\n\n")
 
                 # Add each result
                 for i, result in enumerate(results, 1):
                     f.write(f"## {i}. {result.title}\n\n")
+                    f.write(f"**Source**: {result.source}  \n")
+                    f.write(f"**Date**: {result.date}  \n")
                     f.write(f"**Link**: {result.link}  \n\n")
                     f.write(f"{result.snippet}\n\n")
                     f.write("---\n\n")
@@ -163,7 +160,7 @@ class SearchPlugin(Plugin):
             # Format response
             formatted_response = self.format_response(
                 data=response.model_dump(),
-                message=f"Found {len(results)} results for '{query}' (saved to {markdown_file})",
+                message=f"Found {len(results)} news results for '{query}' (saved to {markdown_file})",
             )
 
             # Print response
@@ -171,7 +168,7 @@ class SearchPlugin(Plugin):
             return formatted_response
 
         except Exception as e:
-            logger.error("Error executing DuckDuckGo search: %s", str(e))
+            logger.error("Error executing news search: %s", str(e))
             error_response = self.format_error(str(e))
             print(error_response)
             return error_response

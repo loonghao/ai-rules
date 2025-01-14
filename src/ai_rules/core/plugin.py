@@ -24,30 +24,72 @@ class BasePluginResponse(BaseModel):
 
     This class provides a standardized format for all plugin responses,
     making them easier for LLMs to parse and process.
+
+    Attributes:
+        status: Response status, either 'success' or 'error'
+        message: Optional response message
+        data: Response data with specific structure
+        error: Optional error details if status is error
+        metadata: Additional metadata about the response
+        timestamp: ISO format timestamp of when the response was created
     """
 
-    model_config = ConfigDict(
-        json_encoders={
-            # Add any custom JSON encoders here if needed
-        }
-    )
+    model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})
 
-    status: str = Field("success", description="Response status (success/error)")
+    class ErrorDetails(BaseModel):
+        """Structure for error details."""
+
+        code: str = Field("unknown_error", description="Error code for programmatic handling")
+        message: str = Field(..., description="Human readable error message")
+        details: Optional[Dict[str, Any]] = Field(None, description="Additional error context")
+
+    class ResponseMetadata(BaseModel):
+        """Structure for response metadata."""
+
+        timestamp: datetime = Field(default_factory=datetime.now, description="When the response was generated")
+        duration_ms: Optional[float] = Field(None, description="Processing duration in milliseconds")
+        source: Optional[str] = Field(None, description="Source of the response data")
+        version: Optional[str] = Field(None, description="Version of the plugin that generated this response")
+
+    status: str = Field("success", description="Response status", pattern="^(success|error)$")
     message: Optional[str] = Field(None, description="Response message")
-    data: Any = Field(..., description="Response data")
-    error: Optional[str] = Field(None, description="Error message if status is error")
-    metadata: Optional[Dict[str, Any]] = Field(
-        default_factory=dict, description="Additional metadata about the response"
+    data: Dict[str, Any] = Field(default_factory=dict, description="Response data with specific structure")
+    error: Optional[ErrorDetails] = Field(None, description="Error details if status is error")
+    metadata: ResponseMetadata = Field(
+        default_factory=ResponseMetadata, description="Additional metadata about the response"
     )
 
     def format_for_llm(self) -> str:
-        """Format response in a way that's easy for LLM to parse.
+        """Format response in a structured way that's easy for LLM to parse.
 
         Returns:
             A formatted string representation of the response.
         """
-        response_dict = self.model_dump(exclude_none=True)
-        return json.dumps(response_dict, indent=2, ensure_ascii=False)
+        # Convert to a structured format
+        formatted = {
+            "response_type": "plugin_response",
+            "status": self.status,
+            "timestamp": self.metadata.timestamp.isoformat(),
+        }
+
+        if self.message:
+            formatted["message"] = self.message
+
+        if self.status == "success":
+            formatted["data"] = self.data
+        else:
+            formatted["error"] = (
+                {"code": self.error.code, "message": self.error.message, "details": self.error.details}
+                if self.error
+                else {"code": "unknown_error", "message": "Unknown error occurred"}
+            )
+
+        # Add metadata excluding timestamp which is already at top level
+        metadata_dict = self.metadata.model_dump(exclude={"timestamp"})
+        if any(metadata_dict.values()):
+            formatted["metadata"] = metadata_dict
+
+        return json.dumps(formatted, indent=2, ensure_ascii=False)
 
 
 class PluginMetadata(BaseModel):
@@ -82,42 +124,53 @@ class PluginSpec(BaseModel):
     params: List[PluginParameter] = Field(default_factory=list, description="Plugin parameters")
 
 
-class Plugin(abc.ABC):
+class Plugin(metaclass=abc.ABCMeta):
     """Base class for all plugins."""
 
-    name: str = "unknown"
-    description: str = ""
-    version: str = "1.0.0"
-    author: str = "AI Rules Team"
-    source: str = "package"
-    script_path: Optional[str] = None
-    metadata: ClassVar[PluginMetadata] = None
+    def __init__(self):
+        """Initialize plugin."""
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.version = "1.0.0"
 
-    def __init__(self) -> None:
-        """Initialize plugin instance."""
-        self.metadata = PluginMetadata(
-            name=self.name,
-            description=self.description,
-            version=self.version,
-            author=self.author,
-            source=self.source,
-            script_path=self.script_path,
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Get plugin metadata."""
+        return PluginMetadata(
+            name=self.name, description=self.description, version=self.version, author="AI Rules Team"
         )
 
+    @property
     @abc.abstractmethod
-    def get_command_spec(self) -> Dict[str, Any]:
-        """Get command specification for Click."""
+    def name(self) -> str:
+        """Get plugin name."""
+        pass
+
+    @property
+    @abc.abstractmethod
+    def description(self) -> str:
+        """Get plugin description."""
         pass
 
     @abc.abstractmethod
-    def execute(self, **kwargs: Dict[str, Any]) -> str:
-        """Execute the plugin functionality.
+    def execute(self, **kwargs) -> Any:
+        """Execute plugin with given parameters."""
+        pass
 
-        Args:
-            **kwargs: Keyword arguments from command line.
+    @property
+    @abc.abstractmethod
+    def click_command(self) -> click.Command:
+        """Get Click command for the plugin.
 
         Returns:
-            Formatted string containing execution results.
+            click.Command: A Click command that wraps this plugin's functionality.
+
+        Example:
+            @click.command()
+            @click.option("--url", required=True, help="URL to scrape")
+            def my_command(url):
+                return self.execute(url=url)
+
+            return my_command
         """
         pass
 
@@ -155,7 +208,7 @@ class Plugin(abc.ABC):
         """
         response = BasePluginResponse(
             status="error",
-            error=error,
+            error=BasePluginResponse.ErrorDetails(code="unknown_error", message=error),
             data=data or {},
             metadata={
                 "plugin_name": self.name,
@@ -164,67 +217,6 @@ class Plugin(abc.ABC):
             },
         )
         return response.format_for_llm()
-
-    def validate(self, **kwargs: Dict[str, Any]) -> bool:
-        """Validate plugin input.
-
-        Args:
-            **kwargs: Keyword arguments from command line.
-
-        Returns:
-            True if input is valid, False otherwise.
-        """
-        try:
-            spec = self.get_command_spec()
-            for param in spec.get("params", []):
-                if not isinstance(param, dict):
-                    continue
-                param_name = param.get("name")
-                if not param_name:
-                    continue
-                if param.get("required", False) and param_name not in kwargs:
-                    return False
-                value = kwargs.get(param_name)
-                if value is not None:
-                    param_type = param.get("type", click.STRING)
-                    if isinstance(param_type, click.ParamType):
-                        try:
-                            param_type.convert(value, None, None)
-                        except click.BadParameter:
-                            return False
-                    else:
-                        try:
-                            param_type(value)
-                        except (ValueError, TypeError):
-                            return False
-            return True
-        except Exception:
-            return False
-
-    def get_metadata(self) -> Dict[str, Any]:
-        """Get plugin metadata.
-
-        Returns:
-            Dictionary containing plugin metadata.
-        """
-        return self.metadata.model_dump()
-
-    def __call__(self, **kwargs: Dict[str, Any]) -> str:
-        """Make plugin instances callable.
-
-        Args:
-            **kwargs: Keyword arguments from command line.
-
-        Returns:
-            Formatted string containing execution results.
-        """
-        try:
-            if not self.validate(**kwargs):
-                return self.format_error("Invalid input parameters")
-            return self.execute(**kwargs)
-        except Exception as e:
-            logger.error("Plugin execution failed: %s", e)
-            return self.format_error(str(e))
 
 
 class PluginManager:
@@ -255,10 +247,10 @@ class PluginManager:
         """
         try:
             plugin = plugin_class() if isinstance(plugin_class, type) else plugin_class
-            if not plugin.metadata.name or plugin.metadata.name == "unknown":
+            if not plugin.name or plugin.name == "unknown":
                 raise click.ClickException("Plugin name is required")
-            cls._plugins[plugin.metadata.name] = plugin
-            click.echo(f"Registered plugin: {plugin.metadata.name}")
+            cls._plugins[plugin.name] = plugin
+            logger.debug(f"Registered plugin: {plugin.name}")
             return plugin_class
         except Exception as e:
             raise click.ClickException(f"Failed to register plugin {plugin_class}: {e}") from e
@@ -280,10 +272,10 @@ class PluginManager:
         try:
             # Create plugin instance from script
             plugin = cls._create_plugin_from_script(script_path)
-            if not plugin.metadata.name or plugin.metadata.name == "unknown":
+            if not plugin.name or plugin.name == "unknown":
                 raise click.ClickException("Plugin name is required")
-            cls._plugins[plugin.metadata.name] = plugin
-            click.echo(f"Registered script plugin: {plugin.metadata.name}")
+            cls._plugins[plugin.name] = plugin
+            logger.debug(f"Registered script plugin: {plugin.name}")
         except Exception as e:
             raise click.ClickException(f"Failed to register script {script_path}: {e}") from e
 
@@ -325,21 +317,39 @@ class PluginManager:
     @classmethod
     def _load_builtin_plugins(cls) -> None:
         """Load built-in plugins from the plugins directory."""
-        plugins_dir = os.path.join(os.path.dirname(__file__), "..", "plugins")
-        click.echo(f"Loading built-in plugins from {plugins_dir}")
-        cls._load_plugins_from_directory(plugins_dir)
+        try:
+            # Get the plugins directory path
+            plugins_dir = os.path.join(os.path.dirname(__file__), "..", "plugins")
+            logger.debug(f"Loading built-in plugins from {plugins_dir}")
+
+            # Import the plugins module directly
+            from ai_rules.plugins import get_plugins
+            plugin_classes = get_plugins()
+            for plugin_class in plugin_classes:
+                try:
+                    plugin_instance = plugin_class()
+                    cls._plugins[plugin_instance.name] = plugin_instance
+                    logger.debug(f"Registered plugin: {plugin_instance.name}")
+                except Exception as e:
+                    logger.error(f"Failed to instantiate plugin {plugin_class.__name__}: {e}")
+        except Exception as e:
+            logger.error(f"Failed to load plugins module: {e}")
+            # Fall back to directory scanning
+            plugins_dir = os.path.join(os.path.dirname(__file__), "..", "plugins")
+            logger.debug(f"Loading built-in plugins from {plugins_dir}")
+            cls._load_plugins_from_directory(plugins_dir)
 
     @classmethod
     def _load_user_plugins(cls, plugin_dir: str) -> None:
         """Load user plugins from specified directory."""
         if os.path.isdir(plugin_dir):
-            click.echo(f"Loading user plugins from {plugin_dir}")
+            logger.debug(f"Loading user plugins from {plugin_dir}")
             cls._load_plugins_from_directory(plugin_dir)
 
     @classmethod
     def _load_entry_point_plugins(cls) -> None:
         """Load plugins from entry points."""
-        click.echo("Loading entry point plugins")
+        logger.debug("Loading entry point plugins")
         try:
             import importlib.metadata as metadata
         except ImportError:
@@ -359,9 +369,9 @@ class PluginManager:
                 else:
                     plugin = plugin_class()
                 cls._plugins[entry_point.name] = plugin
-                click.echo(f"Registered entry point plugin: {entry_point.name}")
+                logger.debug(f"Registered entry point plugin: {entry_point.name}")
             except Exception as e:
-                click.echo(f"Failed to load plugin {entry_point.name}: {e}", err=True)
+                logger.error(f"Failed to load plugin {entry_point.name}: {e}")
 
     @classmethod
     def _load_plugins_from_directory(cls, directory: str) -> None:
@@ -380,17 +390,52 @@ class PluginManager:
         if parent_dir not in sys.path:
             sys.path.insert(0, parent_dir)
 
-        for file in os.listdir(directory):
-            if file.endswith(".py") and not file.startswith("__"):
-                module_name = os.path.splitext(file)[0]
-                try:
-                    module = importlib.import_module(f"{package_name}.plugins.{module_name}")
-                    for item in dir(module):
-                        obj = getattr(module, item)
-                        if isinstance(obj, type) and issubclass(obj, Plugin) and obj != Plugin:
-                            cls.register(obj)
-                except Exception as e:
-                    click.echo(f"Failed to load plugin {module_name}: {e}", err=True)
+        # Import the plugins module
+        try:
+            plugins_module = importlib.import_module(f"{package_name}.plugins")
+            logger.debug("Loaded plugins module: %s", plugins_module.__file__)
+            if hasattr(plugins_module, "get_plugins"):
+                plugin_classes = plugins_module.get_plugins()
+                for plugin_class in plugin_classes:
+                    try:
+                        plugin_instance = plugin_class()
+                        cls._plugins[plugin_instance.name] = plugin_instance
+                        logger.debug("Registered plugin: %s", plugin_instance.name)
+                    except Exception as e:
+                        logger.error("Failed to instantiate plugin %s: %s", plugin_class.__name__, e)
+            else:
+                # Fall back to scanning directory
+                for file in os.listdir(directory):
+                    if file.endswith(".py") and not file.startswith("__"):
+                        module_name = os.path.splitext(file)[0]
+                        try:
+                            module = importlib.import_module(f"{package_name}.plugins.{module_name}")
+                            logger.debug("Loaded plugin module: %s", module.__file__)
+                            for item in dir(module):
+                                obj = getattr(module, item)
+                                if isinstance(obj, type) and issubclass(obj, Plugin) and obj != Plugin:
+                                    plugin_instance = obj()
+                                    cls._plugins[plugin_instance.name] = plugin_instance
+                                    logger.debug("Registered plugin: %s", plugin_instance.name)
+                        except Exception as e:
+                            logger.error("Failed to load plugin %s: %s", module_name, e)
+        except Exception as e:
+            logger.error("Failed to load plugins module: %s", e)
+            # Fall back to scanning directory
+            for file in os.listdir(directory):
+                if file.endswith(".py") and not file.startswith("__"):
+                    module_name = os.path.splitext(file)[0]
+                    try:
+                        module = importlib.import_module(f"{package_name}.plugins.{module_name}")
+                        logger.debug("Loaded plugin module: %s", module.__file__)
+                        for item in dir(module):
+                            obj = getattr(module, item)
+                            if isinstance(obj, type) and issubclass(obj, Plugin) and obj != Plugin:
+                                plugin_instance = obj()
+                                cls._plugins[plugin_instance.name] = plugin_instance
+                                logger.debug("Registered plugin: %s", plugin_instance.name)
+                    except Exception as e:
+                        logger.error("Failed to load plugin %s: %s", module_name, e)
 
     @classmethod
     def _create_plugin_from_script(cls, script_path: str) -> Plugin:
@@ -422,7 +467,7 @@ class PluginManager:
                 if isinstance(obj, type) and issubclass(obj, Plugin) and obj != Plugin:
                     # Create plugin instance
                     plugin = obj()
-                    plugin.metadata.script_path = script_path
+                    plugin.name = module_name
                     return plugin
 
             raise click.ClickException(f"No plugin class found in script {script_path}")
@@ -446,13 +491,28 @@ class UVScriptPlugin(Plugin):
         self.description = description
         self.source = "uv_script"
 
-    def get_command_spec(self) -> Dict[str, Any]:
-        """Get command specification for Click."""
-        return {
-            "params": [
-                {"name": "args", "type": click.STRING, "required": False, "help": "Arguments to pass to the script"}
-            ]
-        }
+    @property
+    def click_command(self) -> click.Command:
+        """Get Click command for the plugin.
+
+        Returns:
+            click.Command: A Click command that wraps this plugin's functionality.
+
+        Example:
+            @click.command()
+            @click.option("--url", required=True, help="URL to scrape")
+            def my_command(url):
+                return self.execute(url=url)
+
+            return my_command
+        """
+
+        @click.command()
+        @click.option("--args", required=False, help="Arguments to pass to the script")
+        def my_command(args):
+            return self.execute(args=args)
+
+        return my_command
 
     def execute(self, args: Optional[str] = None) -> str:
         """Execute the UV script.
@@ -495,24 +555,3 @@ class UVScriptPlugin(Plugin):
             return result.stdout or ""
         except subprocess.CalledProcessError as e:
             raise click.ClickException(f"Script failed with error: {e.stderr}") from e
-
-    def validate(self, **kwargs: Dict[str, Any]) -> bool:
-        """Validate plugin input.
-
-        Args:
-            **kwargs: Keyword arguments from command line.
-
-        Returns:
-            True if input is valid, False otherwise.
-        """
-        # Add validation logic here
-        return True
-
-    def get_metadata(self) -> Dict[str, Any]:
-        """Get plugin metadata.
-
-        Returns:
-            Dictionary containing plugin metadata.
-        """
-        # Add metadata logic here
-        return {}

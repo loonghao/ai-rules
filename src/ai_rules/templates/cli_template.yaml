@@ -27,6 +27,14 @@ cli_specific:
         show_traceback: true
         log_errors: true
 
+    plugins:
+      command_format: "uvx ai-rules plugin {plugin_name} {args}"
+      error_handling:
+        show_traceback: true
+        log_errors: true
+      output_format: "json"
+      timeout: 30
+
   # CLI-specific features
   features:
     - command_completion

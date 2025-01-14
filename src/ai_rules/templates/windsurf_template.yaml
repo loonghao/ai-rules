@@ -1,35 +1,155 @@
 # Windsurf Assistant Rules Template
-# Windsurf助手规则模板，扩展自base_template.yaml
+# 这是Windsurf助手的规则模板，继承并扩展了base_template.yaml的基础功能
 
 extends: base_template.yaml
 
 # Windsurf特定配置
+# 定义了Windsurf环境的核心设置和功能
 windsurf_specific:
+  # Python虚拟环境路径
   venv_path: "./py310"
+  
+  # 规则文件扩展名
   file_extension: ".windsurfrules"
+  
+  # 记录工作进度和笔记的文件
   scratchpad_file: "scratchpad.md"
   
-  # Windsurf特定工具配置
+  # Windsurf工具配置
+  # 定义了各种工具的设置和使用方式
   tools:
+    # LLM工具配置
     llm:
+      # 默认LLM提供商
       default_provider: "openai"
+      # 命令行格式，支持参数替换
       command_format: "py310/bin/python ./tools/llm_api.py --prompt {prompt}"
+      # 并行处理设置
+      max_concurrent_requests: 3
+      # 超时设置（秒）
+      timeout: 30
     
+    # Web爬虫工具配置
     web_scraper:
+      # 命令行格式
       command_format: "py310/bin/python ./tools/web_scraper.py --max-concurrent {max_concurrent} {urls}"
+      # 默认并发数
+      default_max_concurrent: 3
+      # 请求超时（秒）
+      request_timeout: 10
+      # 重试次数
+      max_retries: 3
 
+    # 搜索引擎工具配置
     search_engine:
-      command_format: "py310/bin/python ./tools/search_engine.py {query}"
+      # 命令行格式
+      command_format: "uvx ai-rules plugin search --query {query}"
+      # 每页结果数
+      results_per_page: 10
+      # 最大页数
+      max_pages: 5
 
-  # Windsurf特定课程
+    # 插件工具配置
+    plugins:
+      # 图片搜索
+      image_search:
+        command_format: "uvx ai-rules plugin image --query {query}"
+        max_results: 10
+        image_size: "medium"
+        safe_search: true
+        output_dir: "${IMAGES_DIR}"
+        vector_db:
+          engine: "docarray"
+          index_path: "${IMAGES_DIR}/vector_index"
+      
+      # 新闻搜索
+      news_search:
+        command_format: "uvx ai-rules plugin news --query {query}"
+        max_results: 10
+        sort_by: "relevance"
+        language: "zh"
+        output_dir: "${NEWS_DIR}"
+        vector_db:
+          engine: "docarray"
+          index_path: "${NEWS_DIR}/vector_index"
+      
+      # 翻译工具
+      translate:
+        command_format: "uvx ai-rules plugin translate --text {text} --target-lang {target_lang}"
+        default_target_lang: "zh"
+        output_dir: "${DOWNLOADS_DIR}"
+        
+      # API文档搜索
+      api_docs:
+        command_format: "uvx ai-rules plugin docs --query {query}"
+        max_results: 10
+        output_dir: "${WEB_CONTENT_DIR}"
+        vector_db:
+          engine: "docarray"
+          index_path: "${WEB_CONTENT_DIR}/vector_index"
+        
+      # 本地搜索
+      local_search:
+        command_format: "uvx ai-rules plugin local --query {query}"
+        search_path: "."
+        file_types: ["*.py", "*.js", "*.html", "*.css", "*.md"]
+        output_dir: "${APP_DIR}/local-search"
+        vector_db:
+          engine: "docarray"
+          index_path: "${APP_DIR}/local-search/vector_index"
+
+  # 内存管理配置
+  memory_management:
+    # 记忆存储位置
+    memory_path: "F:/AI-Memory"
+    # 记忆文件格式
+    memory_format: "markdown"
+    # 自动保存间隔（分钟）
+    auto_save_interval: 5
+
+  # 课程和经验总结
   lessons:
+    # 用户指定的重要课程
     user_specified_lessons:
       - "使用py310虚拟环境进行所有Python操作"
       - "保持程序输出清晰和信息丰富"
       - "修改文件前先验证内容"
       - "优先使用异步操作提高性能"
+      - "遵循项目特定的编码规范"
+      - "保持代码模块化和可维护"
+      - "优先考虑代码重用"
+      - "实施健壮的错误处理"
+      
+    # 系统学习的经验教训
     system_learned_lessons:
       - "合理使用内存和CPU资源"
       - "优化大规模代码生成"
       - "保持IDE响应流畅"
       - "智能处理项目依赖"
+      - "优化文件操作性能"
+      - "实现高效的并发处理"
+      - "确保代码安全性"
+      - "维护清晰的文档"
+
+  # 代码风格设置
+  code_style:
+    # Python相关
+    python:
+      indent_size: 4
+      max_line_length: 120
+      docstring_style: "google"
+      
+    # JavaScript相关
+    javascript:
+      indent_size: 2
+      max_line_length: 120
+      use_semicolons: true
+      
+  # 项目管理配置
+  project_management:
+    # 测试目录位置
+    test_directory: "test"
+    # 文档目录
+    docs_directory: "docs"
+    # 常量文件
+    constants_file: "constants.py"
