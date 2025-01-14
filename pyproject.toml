@@ -1,5 +1,8 @@
 [build-system]
-requires = ["hatchling>=1.24.2", "hatch-vcs>=0.3.0"]
+requires = [
+    "hatchling>=1.24.2",
+    "hatch-vcs>=0.3.0",
+]
 build-backend = "hatchling.build"
 
 [project]
@@ -7,7 +10,7 @@ name = "ai-rules"
 version = "0.1.1"
 description = "A powerful CLI toolkit for extending and enhancing AI capabilities through customizable rules and commands."
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 keywords = [
     "ai",
     "cli",
@@ -24,7 +27,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -41,6 +43,7 @@ dependencies = [
     "tomli>=2.0.1",
     "tomli-w>=1.0.0",
     "duckduckgo-search>=7.2.1",
+    "googletrans>=4.0.0",
 ]
 
 [project.license]
@@ -59,10 +62,10 @@ ai-rules = "ai_rules.cli:cli"
 dev = [
     "black>=23.0.0",
     "isort>=5.0.0",
-    "mypy>=1.0.0",
     "ruff>=0.1.14",
     "python-dotenv>=1.0.0",
     "nox>=2023.0.0",
+    "pyright>=1.1.0",
 ]
 test = [
     "pytest>=8.0.0",
@@ -82,30 +85,13 @@ version_files = [
 [tool.black]
 line-length = 120
 target-version = [
-    "py38",
     "py39",
     "py310",
     "py311",
     "py312",
 ]
 include = "\\.pyi?$"
-exclude = '''
-(
-  /(
-      \.eggs         # exclude a few common directories in the
-    | \.git          # root of the project
-    | \.hg
-    | \.mypy_cache
-    | \.tox
-    | \.nox
-    | \.venv
-    | _build
-    | buck-out
-    | build
-    | dist
-  )/
-)
-'''
+exclude = "(\n  /(\n      \\.eggs         # exclude a few common directories in the\n    | \\.git          # root of the project\n    | \\.hg\n    | \\.mypy_cache\n    | \\.tox\n    | \\.nox\n    | \\.venv\n    | _build\n    | buck-out\n    | build\n    | dist\n  )/\n)\n"
 
 [tool.isort]
 profile = "black"
@@ -114,66 +100,75 @@ include_trailing_comma = true
 force_grid_wrap = 0
 lines_after_imports = 2
 use_parentheses = true
+src_paths = ["src"]
 
 [tool.ruff]
 line-length = 120
 target-version = "py38"
-src = ["src"]
+src = [
+    "src",
+]
 
 [tool.ruff.lint]
 select = [
-    "E",  # pycodestyle errors
-    "W",  # pycodestyle warnings
-    "F",  # pyflakes
-    "I",  # isort
-    "C",  # flake8-comprehensions
-    "B",  # flake8-bugbear
+    "E",
+    "W",
+    "F",
+    "I",
+    "C",
+    "B",
 ]
 ignore = [
-    "E501",  # line too long
-    "PLR0913",  # too many arguments
-    "RUF001",  # ambiguous unicode character
-    "RUF002",  # ambiguous unicode character
-    "RUF003",  # ambiguous unicode character
-    "B904",  # raise from
-    "W293",  # blank line contains whitespace
-    "C901",  # function is too complex
-    "W291",  # trailing whitespace
+    "E501",
+    "PLR0913",
+    "RUF001",
+    "RUF002",
+    "RUF003",
+    "B904",
+    "W293",
+    "C901",
+    "W291",
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["F401"]
-"noxfile.py" = ["E402", "I001"]
-"tests/*" = ["S101"]
-
-[tool.mypy]
-python_version = "3.8"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-check_untyped_defs = true
-disallow_untyped_decorators = true
-no_implicit_optional = true
-warn_redundant_casts = true
-warn_unused_ignores = true
-warn_no_return = true
-warn_unreachable = true
-overrides = [
-    { module = "tests.*", disallow_untyped_defs = false },
+"__init__.py" = [
+    "F401",
+]
+"noxfile.py" = [
+    "E402",
+    "I001",
+]
+"tests/*" = [
+    "S101",
 ]
 
 [tool.pytest.ini_options]
-testpaths = [
-    "tests",
-]
-python_files = [
-    "test_*.py",
-]
-addopts = "-ra -q --cov=ai_rules --cov-report=term-missing"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-ra -q --cov=ai_rules --cov-report=term-missing"
 
-[tool.ai-rules.env]
-GOOGLE_API_KEY = ""  # Add your Google API key here
-GOOGLE_SEARCH_CX = ""  # Add your Google Custom Search Engine ID here
-BING_API_KEY = ""  # Add your Bing API key here
+[tool.pyright]
+include = ["src"]
+exclude = [
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.venv",
+    "**/.nox",
+    "**/build",
+    "**/dist",
+    "**/tests",
+    "setup.py",
+    "noxfile.py"
+]
+pythonVersion = "3.10"
+pythonPlatform = "All"
+typeCheckingMode = "basic"
+reportMissingImports = true
+reportMissingTypeStubs = false
+reportUnknownMemberType = false
+reportUnknownVariableType = false
+reportUnknownArgumentType = false

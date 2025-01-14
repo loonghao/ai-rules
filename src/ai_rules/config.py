@@ -13,10 +13,10 @@ import yaml
 class Config:
     """Configuration manager."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize configuration manager."""
-        self.global_config_dir = Path.home() / ".config" / "ai-rules"
-        self.local_config_dir = Path.cwd() / ".ai-rules"
+        self.global_config_dir: Path = Path.home() / ".config" / "ai-rules"
+        self.local_config_dir: Path = Path.cwd() / ".ai-rules"
 
         # Create config directories if they don't exist
         self.global_config_dir.mkdir(parents=True, exist_ok=True)
@@ -50,10 +50,10 @@ class Config:
         if not config_file.exists():
             return {}
 
-        with open(config_file, "r", encoding="utf-8") as f:
+        with open(config_file, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
 
-    def save_config(self, config: Dict[str, Any], is_global: bool = False):
+    def save_config(self, config: Dict[str, Any], is_global: bool = False) -> None:
         """Save configuration to file.
 
         Args:

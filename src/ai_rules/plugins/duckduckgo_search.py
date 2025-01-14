@@ -1,55 +1,203 @@
-"""DuckDuckGo search plugin with retry mechanism and fallback support."""
+"""DuckDuckGo search plugin."""
 
 # Import built-in modules
 import json
+import logging
 import random
-import sys
 import time
-import traceback
+from typing import Any, Dict, List, Optional
 
 # Import third-party modules
 import click
 from duckduckgo_search import DDGS
+from pydantic import BaseModel, ConfigDict, Field
 
 # Import local modules
-from ai_rules.core.plugin import Plugin
+from ai_rules.core.plugin import Plugin, PluginParameter, PluginSpec
 
-# Browser configurations for User-Agent generation
-BROWSERS = {
-    "chrome": {
-        "name": "Chrome",
-        "versions": ["120.0.0.0", "119.0.0.0", "118.0.0.0"],
-        "platforms": {
-            "windows": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version} Safari/537.36",
-            "macos": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version} Safari/537.36",
-            "linux": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version} Safari/537.36",
-        },
-    },
-    "edge": {
-        "name": "Edge",
-        "versions": ["120.0.0.0", "119.0.0.0", "118.0.0.0"],
-        "platforms": {
-            "windows": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/{version}",
-            "macos": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Edge/{version}",
-        },
-    },
-    "firefox": {
-        "name": "Firefox",
-        "versions": ["121.0", "120.0", "119.0"],
-        "platforms": {
-            "windows": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:{version}) Gecko/20100101 Firefox/{version}",
-            "macos": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:{version}) Gecko/20100101 Firefox/{version}",
-            "linux": "Mozilla/5.0 (X11; Linux x86_64; rv:{version}) Gecko/20100101 Firefox/{version}",
-        },
-    },
-}
+# Configure logger
+logger: logging.Logger = logging.getLogger(__name__)
+
+
+class SearchInput(BaseModel):
+    """Search input model."""
+
+    model_config = ConfigDict(frozen=True)
+
+    query: str = Field(..., description="Search query")
+    limit: Optional[int] = Field(5, description="Maximum number of results", ge=1)
+
+
+class SearchResult(BaseModel):
+    """Search result model."""
+
+    model_config = ConfigDict(frozen=True)
+
+    title: str = Field(..., description="Result title")
+    link: str = Field(..., description="Result URL")
+    snippet: str = Field(..., description="Result snippet")
+
+
+class SearchResponse(BaseModel):
+    """Search response model."""
+
+    model_config = ConfigDict(frozen=True)
+
+    results: List[SearchResult] = Field(..., description="Search results")
 
 
 class SearchPlugin(Plugin):
-    """Plugin for web search functionality using DuckDuckGo with fallback mechanisms."""
+    """DuckDuckGo search plugin."""
 
     name = "search"
     description = "Search the web using DuckDuckGo"
+    version = "1.0.0"
+    author = "AI Rules Team"
+
+    def __init__(self) -> None:
+        """Initialize plugin instance."""
+        super().__init__()
+
+    def get_command_spec(self) -> Dict[str, Any]:
+        """Get command specification for Click."""
+        spec = PluginSpec(
+            params=[
+                PluginParameter(
+                    name="query",
+                    type=click.STRING,
+                    required=True,
+                    help="Search query",
+                ),
+                PluginParameter(
+                    name="limit",
+                    type=click.INT,
+                    required=False,
+                    default=5,
+                    help="Maximum number of results (default: 5)",
+                ),
+            ]
+        ).model_dump()
+
+        # Ensure default value is included in the output
+        spec["params"][1]["default"] = 5
+        return spec
+
+    def validate(self, **kwargs: Dict[str, Any]) -> bool:
+        """Validate plugin input.
+
+        Args:
+            **kwargs: Keyword arguments from command line.
+
+        Returns:
+            True if input is valid, False otherwise.
+        """
+        try:
+            # Check required parameters
+            query = kwargs.get("query")
+            if not query or not isinstance(query, str) or not query.strip():
+                logger.error("Query is required and must be a non-empty string")
+                return False
+
+            # Ensure the string is valid UTF-8
+            kwargs["query"] = query.encode("utf-8", errors="replace").decode("utf-8")
+
+            # Set default limit if not provided
+            if kwargs.get("limit") is None:
+                kwargs["limit"] = 5
+
+            SearchInput(**kwargs)
+            return True
+        except Exception as e:
+            logger.error("Validation error: %s", e)
+            return False
+
+    def execute(self, query: str, limit: Optional[int] = 5) -> str:
+        """Execute search query.
+
+        Args:
+            query: Search query string.
+            limit: Maximum number of results to return.
+
+        Returns:
+            Formatted string containing search results.
+        """
+        try:
+            # Validate input
+            input_data = {"query": query, "limit": limit}
+            if not self.validate(**input_data):
+                return self.format_error("Invalid input parameters")
+
+            # Set default limit if None
+            max_results = limit if limit is not None else 5
+
+            # Execute search
+            results = []
+            with DDGS(headers={"User-Agent": self.get_random_user_agent()}) as ddgs:
+                # Execute search with backend parameter and collect exact number of results
+                for result in ddgs.text(query, max_results=max_results, backend="auto"):
+                    if len(results) >= max_results:
+                        break
+                    results.append(
+                        SearchResult(
+                            title=result.get("title", ""),
+                            link=result.get("link", ""),
+                            snippet=result.get("snippet", ""),
+                        )
+                    )
+
+            search_response = SearchResponse(results=results)
+
+            return super().format_response(
+                data=search_response.model_dump(), message=f"Found {len(results)} results for query: {query}"
+            )
+
+        except Exception as e:
+            logger.error("Search execution error: %s", e)
+            return super().format_error(str(e))
+
+    async def search_with_retry(
+        self, query: str, max_results: int = 10, max_retries: int = 3, initial_delay: int = 2
+    ) -> list:
+        """Perform search with retry mechanism and backend fallback.
+
+        Args:
+            query: Search query.
+            max_results: Maximum number of results to return.
+            timeout: Timeout in seconds.
+
+        Returns:
+            List of search results.
+        """
+        for attempt in range(max_retries):
+            try:
+                headers = {
+                    "User-Agent": self.get_random_user_agent(),
+                }
+
+                logger.debug("Attempt %d/%d - Searching for query: %s", attempt + 1, max_retries, query)
+
+                with DDGS(headers=headers) as ddgs:
+                    # Try auto backend (API with HTML fallback)
+                    results = list(
+                        ddgs.text(query, max_results=max_results, backend="auto")  # Use auto backend as recommended
+                    )
+
+                    if not results:
+                        logger.debug("No results found")
+                        return []
+
+                    logger.debug("Found %d results", len(results))
+                    return results
+
+            except Exception as e:
+                logger.error("Attempt %d failed: %s", attempt + 1, e)
+                if attempt < max_retries - 1:
+                    delay = initial_delay * (attempt + 1) + random.random() * 2
+                    logger.debug("Waiting %.2f seconds before retry...", delay)
+                    time.sleep(delay)
+                else:
+                    logger.error("All retry attempts failed")
+                    raise
 
     def get_random_user_agent(self) -> str:
         """Return a random User-Agent string to avoid rate limiting.
@@ -71,121 +219,91 @@ class SearchPlugin(Plugin):
         version = random.choice(browser["versions"])
 
         # Select random platform
-        platform = random.choice(list(browser["platforms"].keys()))
+        platform = random.choice(browser["platforms"])
 
         # Get and format the User-Agent string
-        ua_template = browser["platforms"][platform]
-        return ua_template.format(version=version)
+        if browser_name == "chrome":
+            ua_template = "Mozilla/5.0 ({platform}; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version} Safari/537.36"
+        elif browser_name == "edge":
+            ua_template = "Mozilla/5.0 ({platform}; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/{version}"
+        elif browser_name == "firefox":
+            ua_template = "Mozilla/5.0 ({platform}; rv:{version}) Gecko/20100101 Firefox/{version}"
+        else:
+            raise ValueError("Unsupported browser")
 
-    def search_with_retry(
-        self, query: str, max_results: int = 10, max_retries: int = 3, initial_delay: int = 2
-    ) -> list:
-        """Perform search with retry mechanism and backend fallback.
+        return ua_template.format(version=version, platform=platform)
 
-        Args:
-            query: Search query string
-            max_results: Maximum number of results to return
-            max_retries: Maximum number of retry attempts
-            initial_delay: Initial delay between retries in seconds
-
-        Returns:
-            List of search results
-
-        Raises:
-            Exception: If all retry attempts fail
-        """
-        for attempt in range(max_retries):
-            try:
-                headers = {
-                    "User-Agent": self.get_random_user_agent(),
-                }
-
-                print(f"DEBUG: Attempt {attempt + 1}/{max_retries} - Searching for query: {query}", file=sys.stderr)
-
-                with DDGS(headers=headers) as ddgs:
-                    # Try auto backend (API with HTML fallback)
-                    results = list(
-                        ddgs.text(query, max_results=max_results, backend="auto")  # Use auto backend as recommended
-                    )
-
-                    if not results:
-                        print("DEBUG: No results found", file=sys.stderr)
-                        return []
-
-                    print(f"DEBUG: Found {len(results)} results", file=sys.stderr)
-                    return results
-
-            except Exception as e:
-                print(f"ERROR: Attempt {attempt + 1} failed: {str(e)}", file=sys.stderr)
-                if attempt < max_retries - 1:
-                    delay = initial_delay * (attempt + 1) + random.random() * 2
-                    print(f"DEBUG: Waiting {delay:.2f} seconds before retry...", file=sys.stderr)
-                    time.sleep(delay)
-                else:
-                    print("ERROR: All retry attempts failed", file=sys.stderr)
-                    raise
-
-    def format_results(self, results: list) -> str:
-        """Format search results into JSON string.
+    def format_results(self, results: List[Dict[str, str]]) -> str:
+        """Format search results.
 
         Args:
-            results: List of search results
+            results: List of search result dictionaries.
 
         Returns:
-            JSON formatted string of results
+            Formatted string containing results.
         """
         formatted_results = []
-        for r in results:
-            try:
-                # Get values and handle potential encoding issues
-                title = r.get("title", "")
-                if not title or not isinstance(title, str):
-                    title = "N/A"
+        for result in results:
+            formatted_results.append(
+                {"title": result.get("title", ""), "link": result.get("link", ""), "snippet": result.get("snippet", "")}
+            )
+        return self.format_response({"results": formatted_results})
 
-                snippet = r.get("snippet", r.get("body", ""))
-                if not snippet or not isinstance(snippet, str):
-                    snippet = "N/A"
-
-                url = r.get("link", r.get("href", "N/A"))
-
-                formatted_results.append({"url": url, "title": title, "snippet": snippet})
-            except Exception as e:
-                print(f"WARNING: Failed to format result: {str(e)}", file=sys.stderr)
-                continue
-
-        return json.dumps(formatted_results, indent=2, ensure_ascii=False)
-
-    def get_command_spec(self) -> dict:
-        """Get command specification for Click."""
-        return {
-            "params": [
-                {"name": "query", "type": click.STRING, "required": True, "help": "Search query"},
-                {
-                    "name": "limit",
-                    "type": click.INT,
-                    "required": False,
-                    "default": 5,
-                    "help": "Maximum number of results",
-                },
-            ]
-        }
-
-    def execute(self, query: str, limit: int = 5) -> str:
-        """Execute DuckDuckGo search with retry and fallback mechanisms.
+    def format_response(self, data: Dict[str, Any], message: str = "") -> str:
+        """Format response data as JSON string.
 
         Args:
-            query: Search query string
-            limit: Maximum number of results
+            data: Dictionary containing response data.
+            message: Optional message to include in the response.
 
         Returns:
-            JSON formatted string of search results
+            JSON string containing formatted response data.
         """
-        try:
-            results = self.search_with_retry(query, max_results=limit)
-            return self.format_results(results)
+        response_data = {"data": data}
+        if message:
+            response_data["message"] = message
+        return json.dumps(response_data, indent=2)
 
-        except Exception as e:
-            print(f"ERROR: Search failed: {str(e)}", file=sys.stderr)
-            print(f"ERROR type: {type(e)}", file=sys.stderr)
-            traceback.print_exc(file=sys.stderr)
-            return json.dumps([], indent=2, ensure_ascii=False)
+    def format_error(self, error: str) -> str:
+        """Format error message as JSON string.
+
+        Args:
+            error: Error message to include in the response.
+
+        Returns:
+            JSON string containing formatted error message.
+        """
+        return json.dumps({"error": error}, indent=2)
+
+    def get_metadata(self) -> Dict[str, Any]:
+        """Get plugin metadata.
+
+        Returns:
+            Dictionary containing plugin metadata.
+        """
+        return {
+            "name": self.name,
+            "description": self.description,
+            "version": self.version,
+            "author": self.author,
+        }
+
+
+# Browser configurations for User-Agent generation
+BROWSERS: Dict[str, Dict[str, str]] = {
+    "chrome": {
+        "name": "Chrome",
+        "versions": ["114.0.0.0", "113.0.0.0", "112.0.0.0"],
+        "platforms": ["Windows NT 10.0", "Macintosh", "Linux"],
+    },
+    "firefox": {
+        "name": "Firefox",
+        "versions": ["113.0", "112.0", "111.0"],
+        "platforms": ["Windows NT 10.0", "Macintosh", "Linux"],
+    },
+    "edge": {
+        "name": "Edge",
+        "versions": ["113.0.1774.57", "112.0.1722.64", "111.0.1661.62"],
+        "platforms": ["Windows NT 10.0", "Macintosh"],
+    },
+}

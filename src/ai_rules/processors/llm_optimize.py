@@ -59,7 +59,7 @@ class LLMOptimizeProcessor(RuleProcessor):
             return optimized_content
 
         except Exception as e:
-            raise Exception(f"LLM optimization failed: {str(e)}")
+            raise Exception(f"LLM optimization failed: {e!s}") from e
 
     def validate(self, content: str) -> bool:
         """Validate if the content can be optimized.
