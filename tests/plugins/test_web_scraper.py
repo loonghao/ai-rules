@@ -19,31 +19,19 @@ def web_scraper_plugin():
 
 def test_validate_valid_input(web_scraper_plugin):
     """Test input validation with valid parameters."""
-    input_data = {
-        "urls": ["https://example.com", "https://test.com"],
-        "max_concurrent": 5,
-        "format": "markdown"
-    }
+    input_data = {"urls": ["https://example.com", "https://test.com"], "max_concurrent": 5, "format": "markdown"}
     assert web_scraper_plugin.validate(**input_data) is True
 
 
 def test_validate_invalid_urls(web_scraper_plugin):
     """Test input validation with invalid URLs."""
-    input_data = {
-        "urls": ["not_a_url", "also_not_a_url"],
-        "max_concurrent": 5,
-        "format": "markdown"
-    }
+    input_data = {"urls": ["not_a_url", "also_not_a_url"], "max_concurrent": 5, "format": "markdown"}
     assert web_scraper_plugin.validate(**input_data) is False
 
 
 def test_validate_empty_urls(web_scraper_plugin):
     """Test input validation with empty URLs list."""
-    input_data = {
-        "urls": [],
-        "max_concurrent": 5,
-        "format": "markdown"
-    }
+    input_data = {"urls": [], "max_concurrent": 5, "format": "markdown"}
     assert web_scraper_plugin.validate(**input_data) is False
 
 
@@ -96,10 +84,7 @@ def test_format_response(web_scraper_plugin):
     data = {
         "url": "https://example.com",
         "content": "Test content",
-        "metadata": {
-            "title": "Test Title",
-            "description": "Test Description"
-        }
+        "metadata": {"title": "Test Title", "description": "Test Description"},
     }
     message = "Test message"
     response = web_scraper_plugin.format_response(data, message)

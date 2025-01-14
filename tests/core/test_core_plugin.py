@@ -21,29 +21,33 @@ class TestData(BaseModel):
     """Test data model."""
 
     text: str = Field(..., description="Test text")
-    count: int = Field(1, description="Test count")
+    count: int = Field(1, description="Test count", gt=0)
 
 
 class TestPlugin(Plugin):
     """Test plugin implementation."""
-
-    def __init__(self) -> None:
-        """Initialize plugin instance."""
-        super().__init__()
-        self.metadata = PluginMetadata(
-            name="test_plugin", description="Test plugin description", version="1.0.0", author="Test Author"
-        )
-
-    def get_command_spec(self) -> Dict[str, Any]:
-        """Define command line parameters."""
-        return PluginSpec(
-            params=[
-                PluginParameter(name="text", type=click.STRING, required=True, help="Test text"),
-                PluginParameter(name="count", type=click.INT, required=False, help="Test count (default: 1)"),
-            ]
-        ).model_dump()
-
-    def execute(self, **kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    
+    @property
+    def name(self) -> str:
+        """Get plugin name."""
+        return "test_plugin"
+        
+    @property
+    def description(self) -> str:
+        """Get plugin description."""
+        return "Test plugin description"
+        
+    @property
+    def click_command(self) -> click.Command:
+        """Get click command."""
+        @click.command(name=self.name, help=self.description)
+        @click.argument("text")
+        @click.option("--count", default=1, help="Number of times to repeat")
+        def command(text: str, count: int):
+            return self.execute(text=text, count=count)
+        return command
+        
+    def execute(self, **kwargs) -> Dict[str, Any]:
         """Execute plugin functionality."""
         try:
             # Validate input
@@ -74,46 +78,39 @@ def plugin_manager() -> PluginManager:
 
 def test_plugin_metadata(plugin: TestPlugin) -> None:
     """Test plugin metadata."""
-    assert plugin.metadata.name == "test_plugin"
-    assert plugin.metadata.description == "Test plugin description"
-    assert plugin.metadata.version == "1.0.0"
-    assert plugin.metadata.author == "Test Author"
+    assert plugin.name == "test_plugin"
+    assert plugin.description == "Test plugin description"
 
 
 def test_command_spec(plugin: TestPlugin) -> None:
     """Test command specification."""
-    spec = plugin.get_command_spec()
-    assert isinstance(spec, dict)
-    assert "params" in spec
-
-    params = spec["params"]
-    assert len(params) == 2
-
-    text_param = next(p for p in params if p["name"] == "text")
-    assert text_param["required"] is True
-
-    count_param = next(p for p in params if p["name"] == "count")
-    assert count_param["required"] is False
+    command = plugin.click_command
+    assert command.name == "test_plugin"
+    assert command.help == "Test plugin description"
+    
+    param_names = [param.name for param in command.params]
+    assert "text" in param_names
+    assert "count" in param_names
 
 
 def test_execute_success(plugin: TestPlugin) -> None:
     """Test successful execution."""
-    result = plugin.execute(text="test", count=3)
+    result = plugin.execute(text="hello", count=2)
     assert isinstance(result, dict)
-    assert result["result"] == "testtesttest"
+    assert result["result"] == "hellohello"
 
 
 def test_execute_default_count(plugin: TestPlugin) -> None:
     """Test execution with default count."""
-    result = plugin.execute(text="test")
+    result = plugin.execute(text="hello")
     assert isinstance(result, dict)
-    assert result["result"] == "test"
+    assert result["result"] == "hello"
 
 
 def test_execute_invalid_count(plugin: TestPlugin) -> None:
     """Test execution with invalid count."""
     with pytest.raises(click.ClickException):
-        plugin.execute(text="test", count="invalid")
+        plugin.execute(text="hello", count=0)
 
 
 def test_execute_missing_text(plugin: TestPlugin) -> None:

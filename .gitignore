@@ -25,3 +25,5 @@ target/*
 /run-ide.bat
 *.egg-info
 /.windsurfrules
+/ai-rules.code-workspace
+/.ai-rules/

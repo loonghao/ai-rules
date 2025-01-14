@@ -1,79 +1,113 @@
-"""Test cases for the translate plugin."""
+"""Test translation plugin."""
 
 # Import built-in modules
 import json
-from unittest.mock import MagicMock, patch
 
 # Import third-party modules
 import pytest
 
 # Import local modules
-from ai_rules.plugins.translate import TranslatePlugin
+from ai_rules.plugins.translate import TranslateInput, TranslateOutput, TranslatePlugin, TranslationResult
+
 
 @pytest.fixture
 def translate_plugin():
-    """Fixture for creating a TranslatePlugin instance."""
+    """Create a translation plugin instance."""
     return TranslatePlugin()
 
-@pytest.fixture
-def mock_translator():
-    """Fixture for mock translator."""
-    translator = MagicMock()
-    translator.translate.return_value = "翻译后的文本"
-    return translator
 
 @pytest.mark.asyncio
-async def test_execute_success(translate_plugin):
-    """Test successful translation execution."""
-    result = await translate_plugin.execute(text="Hello", source_lang="en", target_lang="zh")
-    assert isinstance(result, str)
-    response = json.loads(result)
-    assert response["status"] == "success"
-    assert "message" in response
-    assert "data" in response
-    assert "translated_text" in response["data"]
+async def test_translate_input_model():
+    """Test TranslateInput model."""
+    input_data = TranslateInput(text="Hello world", target="zh", source="en")
+    assert input_data.text == "Hello world"
+    assert input_data.target == "zh"
+    assert input_data.source == "en"
+    assert input_data.source_code == "en"
+    assert input_data.target_code == "zh"
+
 
 @pytest.mark.asyncio
-async def test_execute_error(translate_plugin, mocker):
-    """Test translation execution with error."""
-    mocker.patch.object(translate_plugin, "_translate", side_effect=Exception("Test error"))
-    result = await translate_plugin.execute(text="Hello", source_lang="en", target_lang="zh")
-    assert isinstance(result, str)
-    response = json.loads(result)
-    assert response["status"] == "error"
-    assert response["message"] == "Test error"
+async def test_translate_output_model():
+    """Test TranslateOutput model."""
+    output_data = TranslateOutput(text="你好世界", source="en", target="zh")
+    assert output_data.text == "你好世界"
+    assert output_data.source == "en"
+    assert output_data.target == "zh"
+
 
 @pytest.mark.asyncio
-async def test_execute_invalid_provider(translate_plugin):
-    """Test translation with invalid provider."""
-    result = await translate_plugin.execute(
-        text="Hello",
-        source_lang="en",
-        target_lang="zh",
-        provider="invalid"
+async def test_translation_result_model():
+    """Test TranslationResult model."""
+    result = TranslationResult(
+        source_text="Hello world", translated_text="你好世界", source_lang="en", target_lang="zh"
     )
-    assert isinstance(result, str)
-    response = json.loads(result)
-    assert response["status"] == "error"
-    assert "Invalid provider" in response["message"]
+    assert result.source_text == "Hello world"
+    assert result.translated_text == "你好世界"
+    assert result.source_lang == "en"
+    assert result.target_lang == "zh"
 
-def test_click_command(translate_plugin):
+
+@pytest.mark.asyncio
+async def test_plugin_name(translate_plugin):
+    """Test plugin name."""
+    assert translate_plugin.name == "translate"
+
+
+@pytest.mark.asyncio
+async def test_plugin_description(translate_plugin):
+    """Test plugin description."""
+    assert translate_plugin.description == "Translate text between languages using Google Translate"
+
+
+@pytest.mark.asyncio
+async def test_click_command(translate_plugin):
     """Test click command configuration."""
     command = translate_plugin.click_command
     assert command.name == "translate"
-    assert command.help == "Translate text between languages"
-    assert len(command.params) == 4
+    assert command.help == "Translate text between languages using Google Translate"
+
+    # Check argument names
     param_names = [param.name for param in command.params]
     assert "text" in param_names
-    assert "source_lang" in param_names
-    assert "target_lang" in param_names
-    assert "provider" in param_names
 
-def test_format_error(translate_plugin):
-    """Test error formatting."""
-    error_msg = "Test error"
-    response = translate_plugin.format_error(error_msg)
-    assert isinstance(response, str)
-    parsed = json.loads(response)
-    assert parsed["status"] == "error"
-    assert parsed["message"] == error_msg
+    # Check option names
+    option_names = [param.opts[0] for param in command.params if param.opts]
+    assert "--source-lang" in option_names
+    assert "--target-lang" in option_names
+
+
+@pytest.mark.asyncio
+async def test_execute_success(translate_plugin, mocker):
+    """Test successful execution."""
+    # Mock GoogleTranslator
+    mock_translator = mocker.MagicMock()
+    mock_translator.translate.return_value = "你好世界"
+    mocker.patch("ai_rules.plugins.translate.GoogleTranslator", return_value=mock_translator)
+
+    result = await translate_plugin.execute(text="Hello world", source_lang="en", target_lang="zh")
+
+    assert isinstance(result, str)
+    parsed = json.loads(result)
+    assert "data" in parsed
+    assert "message" in parsed
+    assert parsed["data"]["source_text"] == "Hello world"
+    assert parsed["data"]["translated_text"] == "你好世界"
+    assert parsed["data"]["source_lang"] == "en"
+    assert parsed["data"]["target_lang"] == "zh"
+
+
+@pytest.mark.asyncio
+async def test_execute_error(translate_plugin, mocker):
+    """Test execution with error."""
+    # Mock GoogleTranslator to raise an exception
+    mock_translator = mocker.MagicMock()
+    mock_translator.translate.side_effect = Exception("Test error")
+    mocker.patch("ai_rules.plugins.translate.GoogleTranslator", return_value=mock_translator)
+
+    result = await translate_plugin.execute(text="Hello world")
+    assert isinstance(result, str)
+
+    parsed = json.loads(result)
+    assert "error" in parsed
+    assert parsed["error"] == "Test error"
