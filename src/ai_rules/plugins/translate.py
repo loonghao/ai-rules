@@ -9,7 +9,7 @@ from ai_rules.core.plugin import Plugin
 
 class TranslatePlugin(Plugin):
     """Plugin for text translation functionality."""
-    
+
     name = "translate"
     description = "Translate text between languages"
 
@@ -17,19 +17,14 @@ class TranslatePlugin(Plugin):
         """Get command specification for Click."""
         return {
             "params": [
-                {
-                    "name": "text",
-                    "type": click.STRING,
-                    "required": True,
-                    "help": "Text to translate"
-                },
+                {"name": "text", "type": click.STRING, "required": True, "help": "Text to translate"},
                 {
                     "name": "target_lang",
                     "type": click.STRING,
                     "required": False,
                     "default": "en",
-                    "help": "Target language code (e.g. en, zh, ja)"
-                }
+                    "help": "Target language code (e.g. en, zh, ja)",
+                },
             ]
         }
 

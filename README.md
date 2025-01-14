@@ -120,7 +120,7 @@ The following Click types are supported:
 ### Example Plugins
 
 Check out our example plugins for reference:
-1. [Search Plugin](src/ai_rules/plugins/search.py): Web search functionality
+1. [Search Plugin](src/ai_rules/plugins/duckduckgo_search.py): Web search functionality
 2. [Translate Plugin](src/ai_rules/plugins/translate.py): Text translation
 3. [Weather Plugin](src/ai_rules/plugins/weather.py): Weather information
 

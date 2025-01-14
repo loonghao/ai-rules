@@ -18,7 +18,7 @@ from . import scripts
 from .core.plugin import PluginManager
 from .core.template import RuleConverter
 
-TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), 'templates')
+TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
 
 
 @click.group()
@@ -38,8 +38,8 @@ def cli():
 
 
 @cli.command()
-@click.argument('assistant_type', type=click.Choice(['windsurf', 'cursor', 'cli']))
-@click.option('--output-dir', '-o', default='.', help='Output directory for generated files')
+@click.argument("assistant_type", type=click.Choice(["windsurf", "cursor", "cli"]))
+@click.option("--output-dir", "-o", default=".", help="Output directory for generated files")
 def init(assistant_type: str, output_dir: str):
     """Initialize AI assistant configuration files."""
     try:
@@ -83,7 +83,7 @@ def list_scripts():
         for name, config in scripts_config.items():
             click.echo(f"\n{click.style(name, fg='green')}:")
             click.echo(f"  Path: {config['path']}")
-            if config.get('global', False):
+            if config.get("global", False):
                 click.echo("  Scope: Global")
             else:
                 click.echo("  Scope: Project")
@@ -112,11 +112,11 @@ def plugin():
 
 def create_plugin_command(plugin_class):
     """Create a Click command for a plugin.
-    
+
     Args:
         plugin_class: Plugin class to create command for.
     """
-    if not hasattr(plugin_class, 'name') or not plugin_class.name:
+    if not hasattr(plugin_class, "name") or not plugin_class.name:
         click.echo(f"Warning: Plugin class {plugin_class.__name__} has no name attribute", err=True)
         return None
 
@@ -128,12 +128,12 @@ def create_plugin_command(plugin_class):
 
             # Execute plugin
             result = plugin.execute(**kwargs)
-            
+
             # Format and display result
             if isinstance(result, (dict, list)):
-                click.echo(click.style(json.dumps(result, indent=2, ensure_ascii=False), fg='green'))
+                click.echo(click.style(json.dumps(result, indent=2, ensure_ascii=False), fg="green"))
             else:
-                click.echo(click.style(str(result), fg='green'))
+                click.echo(click.style(str(result), fg="green"))
         except Exception as e:
             click.echo(f"Error running plugin {plugin_class.name}: {str(e)}", err=True)
             sys.exit(1)
@@ -148,31 +148,26 @@ def create_plugin_command(plugin_class):
 
     # Create command and add parameters
     command = click.command(name=plugin_class.name)(create_command_function)
-    for param in command_spec.get('params', []):
-        param_name = param['name']
-        param_type = param.get('type', click.STRING)
-        required = param.get('required', False)
-        help_text = param.get('help', '')
-        default = param.get('default', None)
-        
+    for param in command_spec.get("params", []):
+        param_name = param["name"]
+        param_type = param.get("type", click.STRING)
+        required = param.get("required", False)
+        help_text = param.get("help", "")
+        default = param.get("default", None)
+
         if required:
             command = click.argument(param_name, type=param_type)(command)
         else:
-            command = click.option(
-                f"--{param_name}",
-                type=param_type,
-                default=default,
-                help=help_text
-            )(command)
+            command = click.option(f"--{param_name}", type=param_type, default=default, help=help_text)(command)
 
     # Update command help from plugin description
-    if hasattr(plugin_class, 'description') and plugin_class.description:
+    if hasattr(plugin_class, "description") and plugin_class.description:
         command.help = plugin_class.description
-    
+
     # Add command to plugin group
     plugin.add_command(command)
     return command
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     cli()

@@ -17,6 +17,7 @@ def register_plugin(name: str, description: str) -> Callable[[Type[Plugin]], Typ
     Returns:
         Decorator function that registers the plugin.
     """
+
     def decorator(plugin_class: Type[Plugin]) -> Type[Plugin]:
         """Decorator function that registers the plugin.
 
@@ -29,4 +30,5 @@ def register_plugin(name: str, description: str) -> Callable[[Type[Plugin]], Typ
         plugin_class.name = name
         plugin_class.description = description
         return PluginManager.register(plugin_class)
+
     return decorator
