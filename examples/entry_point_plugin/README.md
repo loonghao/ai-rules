@@ -6,6 +6,8 @@ A weather plugin for ai-rules-cli that provides weather information using the Op
 
 - Get current weather information for any city
 - Supports Chinese language output
+- Configurable temperature units (metric/imperial)
+- Standardized response format with metadata
 - Provides detailed weather data including:
   - Temperature
   - Feels like temperature
@@ -38,24 +40,48 @@ OPENWEATHER_API_KEY = "your-api-key"
 ## Usage
 
 ```bash
-uvx-ai-rules weather "Beijing"
+# Get weather in metric units (default)
+uvx ai-rules plugin weather --city "Beijing"
+
+# Get weather in imperial units
+uvx ai-rules plugin weather --city "New York" --units imperial
 ```
 
-Example output:
+Example response:
 ```json
 {
-  "city": "北京",
-  "temperature": "5.2°C",
-  "feels_like": "2.1°C",
-  "humidity": "45%",
-  "pressure": "1015 hPa",
-  "weather": "晴",
-  "wind": {
-    "speed": "3.1 m/s",
-    "direction": 315
+  "status": "success",
+  "message": "Current weather in Beijing",
+  "data": {
+    "city": "北京",
+    "temperature": 5.2,
+    "feels_like": 2.1,
+    "humidity": 45,
+    "pressure": 1015,
+    "description": "晴朗",
+    "wind_speed": 3.1,
+    "wind_direction": "东北",
+    "units": "metric"
+  },
+  "metadata": {
+    "plugin_name": "weather",
+    "plugin_version": "1.0.0",
+    "timestamp": "2025-01-14T18:04:54+08:00"
   }
 }
 ```
+
+## Development
+
+This plugin demonstrates:
+1. Using Pydantic models for input/output validation
+2. Implementing standardized response format
+3. Proper error handling and logging
+4. Type hints and comprehensive docstrings
+5. Command-line parameter configuration
+6. Integration with external APIs
+
+For more information on developing plugins, see the [ai-rules documentation](https://github.com/yourusername/ai-rules).
 
 ## API Key
 

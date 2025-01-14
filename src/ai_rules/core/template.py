@@ -14,16 +14,16 @@ import yaml
 class RuleConverter:
     """Converts YAML rules to Markdown format for different AI assistants."""
 
-    def __init__(self, template_dir: str):
+    def __init__(self, template_dir: str) -> None:
         """
         Initialize the converter.
 
         Args:
             template_dir: Directory containing YAML templates
         """
-        self.template_dir = Path(template_dir)
-        self.base_template = self._load_yaml("base_template.yaml")
-        self.markdown_template_dir = self.template_dir / "markdown_templates"
+        self.template_dir: Path = Path(template_dir)
+        self.base_template: Dict[str, Any] = self._load_yaml("base_template.yaml")
+        self.markdown_template_dir: Path = self.template_dir / "markdown_templates"
 
     def _load_yaml(self, filename: str) -> Dict[str, Any]:
         """
@@ -36,7 +36,7 @@ class RuleConverter:
             Dict containing YAML contents
         """
         try:
-            with open(self.template_dir / filename, "r", encoding="utf-8") as f:
+            with open(self.template_dir / filename, encoding="utf-8") as f:
                 return yaml.safe_load(f)
         except FileNotFoundError:
             print(f"Error: YAML file '{filename}' not found.")
@@ -53,7 +53,7 @@ class RuleConverter:
             String containing template content
         """
         try:
-            with open(self.markdown_template_dir / template_name, "r", encoding="utf-8") as f:
+            with open(self.markdown_template_dir / template_name, encoding="utf-8") as f:
                 return f.read()
         except FileNotFoundError:
             print(f"Error: Markdown template '{template_name}' not found.")
@@ -96,7 +96,7 @@ class RuleConverter:
 
         return result
 
-    def convert_to_markdown(self, assistant_type: str, output_dir: str):
+    def convert_to_markdown(self, assistant_type: str, output_dir: str) -> None:
         """
         Convert YAML configuration to Markdown format.
 
@@ -138,4 +138,4 @@ class RuleConverter:
                 f.write(markdown_content)
             print(f"Generated {output_file}")
         except Exception as e:
-            print(f"Error: Failed to write to file '{output_file}': {str(e)}")
+            print(f"Error: Failed to write to file '{output_file}': {e!s}")

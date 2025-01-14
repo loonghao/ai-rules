@@ -1,144 +1,67 @@
 #!/usr/bin/env python3
 # /// script
-# requires-python = ">=3.11"
-# dependencies = [
-#     "requests>=2.25.0",
-# ]
+# requires-python = ">=3.8"
+# dependencies = []
 # ///
-"""Example UV script plugin for ai-rules-cli."""
+"""Example script plugin for web search."""
 
 # Import built-in modules
 import argparse
 import json
-from typing import List, Dict, Any
+import logging
+import sys
+from typing import Dict, List
 
-# Import third-party modules
-import requests
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
-# Import local modules
-try:
-    from ai_rules.core.config import get_env_var
-except ImportError:
-    def get_env_var(name: str, default: str = None) -> str:
-        """Fallback get_env_var function."""
-        import os
-        return os.getenv(name, default)
-
-
-def search_google(query: str) -> List[Dict[str, Any]]:
-    """Search Google for the given query.
-
+def search_web(query: str, limit: int = 5) -> List[Dict[str, str]]:
+    """Search the web for given query.
+    
     Args:
-        query: The search query.
-
+        query: Search query
+        limit: Maximum number of results
+        
     Returns:
-        A list of search results.
+        List of search results
     """
-    api_key = get_env_var("GOOGLE_API_KEY", "")
-    cx = get_env_var("GOOGLE_SEARCH_CX", "")
-    
-    if not api_key or not cx:
-        return [{"error": "Please set GOOGLE_API_KEY and GOOGLE_SEARCH_CX environment variables"}]
-    
-    url = "https://www.googleapis.com/customsearch/v1"
-    params = {
-        "key": api_key,
-        "cx": cx,
-        "q": query,
-        "num": 10,  # Number of results to return
-    }
+    try:
+        # This is just a mock implementation
+        # In a real plugin, you would integrate with a search API
+        results = [
+            {
+                "title": f"Result {i} for {query}",
+                "url": f"https://example.com/result{i}",
+                "snippet": f"This is result {i} for query: {query}"
+            }
+            for i in range(limit)
+        ]
+        
+        logger.info("Found %d results for query: %s", len(results), query)
+        return results
+        
+    except Exception as e:
+        logger.error("Search failed: %s", e)
+        raise
+
+def main() -> None:
+    """Main entry point."""
+    parser = argparse.ArgumentParser(description="Web search script")
+    parser.add_argument("query", help="Search query")
+    parser.add_argument("--limit", type=int, default=5, help="Maximum number of results")
     
     try:
-        response = requests.get(url, params=params)
-        response.raise_for_status()
-        data = response.json()
-        
-        if "items" not in data:
-            return []
-        
-        results = []
-        for item in data["items"]:
-            results.append({
-                "title": item.get("title", ""),
-                "link": item.get("link", ""),
-                "snippet": item.get("snippet", "")
-            })
-        return results
-    except requests.RequestException as e:
-        return [{"error": f"Search request failed: {str(e)}"}]
-    except KeyError as e:
-        return [{"error": f"Invalid response format: {str(e)}"}]
-    except Exception as e:
-        return [{"error": f"Unexpected error: {str(e)}"}]
-
-
-def search_bing(query: str) -> List[Dict[str, Any]]:
-    """Search Bing for the given query.
-
-    Args:
-        query: The search query.
-
-    Returns:
-        A list of search results.
-    """
-    subscription_key = get_env_var("BING_API_KEY", "")
-    
-    if not subscription_key:
-        return [{"error": "Please set BING_API_KEY environment variable"}]
-    
-    url = "https://api.bing.microsoft.com/v7.0/search"
-    headers = {"Ocp-Apim-Subscription-Key": subscription_key}
-    params = {
-        "q": query,
-        "count": 10,
-        "mkt": "zh-CN"
-    }
-    
-    try:
-        response = requests.get(url, headers=headers, params=params)
-        response.raise_for_status()
-        data = response.json()
-        
-        if "webPages" not in data or "value" not in data["webPages"]:
-            return []
-        
-        results = []
-        for item in data["webPages"]["value"]:
-            results.append({
-                "title": item.get("name", ""),
-                "link": item.get("url", ""),
-                "snippet": item.get("snippet", "")
-            })
-        return results
-    except requests.RequestException as e:
-        return [{"error": f"Search request failed: {str(e)}"}]
-    except KeyError as e:
-        return [{"error": f"Invalid response format: {str(e)}"}]
-    except Exception as e:
-        return [{"error": f"Unexpected error: {str(e)}"}]
-
-
-def main(query: str = None) -> None:
-    """Main entry point.
-    
-    Args:
-        query: The search query.
-    """
-    if query is None:
-        parser = argparse.ArgumentParser(description="Search Engine")
-        parser.add_argument("query", help="Search query")
         args = parser.parse_args()
-        query = args.query
-
-    # Try Google first, if it fails, fallback to Bing
-    results = search_google(query)
-    
-    # If Google search failed or returned no results, try Bing
-    if not results or (len(results) == 1 and "error" in results[0]):
-        results = search_bing(query)
-    
-    print(json.dumps(results, indent=2, ensure_ascii=False))
-
+        results = search_web(args.query, args.limit)
+        print(json.dumps(results, indent=2, ensure_ascii=False))
+        
+    except Exception as e:
+        logger.error("Script failed: %s", e)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

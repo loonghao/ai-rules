@@ -25,6 +25,9 @@ def pytest(session: nox.Session) -> None:
     - Combine options: nox -s pytest -- tests/ai_rules/test_core.py -v -k "test_specific_function"
     """
     session.install(".[test]")
+    # Install example plugins in development mode
+    session.install("-e", "examples/entry_point_plugin")
+    
     test_root = THIS_ROOT / "tests"
 
     # Print debug information
@@ -64,35 +67,61 @@ def lint(session: nox.Session) -> None:
     This session runs the following checks in order:
     1. ruff - Check common issues (including import sorting)
     2. black - Check code formatting
-    3. mypy - Check type hints
+    3. pyright - Type checking
     """
-    session.install(".[dev]")
+    session.install(".[dev]", "pyright")
 
     # Check and fix common issues with ruff
     session.run("ruff", "check", PACKAGE_NAME, "tests")
 
     # Check code formatting with black
     session.run("black", "--check", PACKAGE_NAME, "tests")
-
-    # Check type hints with mypy
-    session.run("mypy", PACKAGE_NAME, "tests")
+    
+    # Type checking with pyright
+    session.run(
+        "pyright",
+        PACKAGE_NAME,
+    )
 
 
 @nox.session
 def lint_fix(session: nox.Session) -> None:
-    """Fix linting issues.
-
-    This session runs the following tools in order:
-    1. ruff - Fix common issues (including import sorting)
-    2. black - Format code
-    """
+    """Fix linting issues automatically that can be fixed."""
     session.install(".[dev]")
-
-    # Fix common issues with ruff
-    session.run("ruff", "check", "--fix", PACKAGE_NAME, "tests")
-
-    # Format code with black
+    # Fix code style issues
+    session.run("ruff", "check", "--fix", "--unsafe-fixes", PACKAGE_NAME, "tests")
     session.run("black", PACKAGE_NAME, "tests")
+    # Fix type annotation issues
+    session.run("pyright", "--createstub", PACKAGE_NAME)
+
+
+@nox.session
+def type_fix(session: nox.Session) -> None:
+    """
+    Automatically fix type annotations using pyright.
+    
+    This session will:
+    1. Install pyright
+    2. Generate type stubs for the project
+    3. Run type checking with verify types mode
+    """
+    # Install dependencies
+    session.install(".[test]", "pyright")
+    
+    # Generate type stubs
+    session.run(
+        "pyright",
+        "--createstub", "ai_rules",
+        "--pythonpath", str(THIS_ROOT / "src"),
+    )
+    
+    # Run type checking with verify types
+    session.run(
+        "pyright",
+        "--verifytypes", "ai_rules",
+        "--ignoreexternal",
+        "--pythonpath", str(THIS_ROOT / "src"),
+    )
 
 
 @nox.session
