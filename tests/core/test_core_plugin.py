@@ -11,7 +11,7 @@ import pytest
 from pydantic import BaseModel, Field
 
 # Import local modules
-from ai_rules.core.plugin import Plugin, PluginManager, PluginMetadata, PluginParameter, PluginSpec
+from ai_rules.core.plugin import Plugin, PluginManager
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -26,27 +26,29 @@ class TestData(BaseModel):
 
 class TestPlugin(Plugin):
     """Test plugin implementation."""
-    
+
     @property
     def name(self) -> str:
         """Get plugin name."""
         return "test_plugin"
-        
+
     @property
     def description(self) -> str:
         """Get plugin description."""
         return "Test plugin description"
-        
+
     @property
     def click_command(self) -> click.Command:
         """Get click command."""
+
         @click.command(name=self.name, help=self.description)
         @click.argument("text")
         @click.option("--count", default=1, help="Number of times to repeat")
         def command(text: str, count: int):
             return self.execute(text=text, count=count)
+
         return command
-        
+
     def execute(self, **kwargs) -> Dict[str, Any]:
         """Execute plugin functionality."""
         try:
@@ -87,7 +89,7 @@ def test_command_spec(plugin: TestPlugin) -> None:
     command = plugin.click_command
     assert command.name == "test_plugin"
     assert command.help == "Test plugin description"
-    
+
     param_names = [param.name for param in command.params]
     assert "text" in param_names
     assert "count" in param_names

@@ -3,7 +3,6 @@
 # Import built-in modules
 import asyncio
 import hashlib
-import json
 import logging
 import os
 from datetime import datetime
@@ -111,22 +110,22 @@ class WebScraperPlugin(Plugin):
                     return True
                 except Exception as e:
                     logger.warning(f"Failed to load with networkidle, trying with load: {e}")
-                    
+
                 # If networkidle fails, try with load
                 try:
                     await page.goto(url, wait_until="load", timeout=timeout)
                     return True
                 except Exception as e:
                     logger.warning(f"Failed to load with load, trying with domcontentloaded: {e}")
-                    
+
                 # If load fails, try with domcontentloaded
                 await page.goto(url, wait_until="domcontentloaded", timeout=timeout)
                 return True
-                
+
             except Exception as e:
                 if attempt < max_retries - 1:
                     logger.warning(f"Attempt {attempt + 1} failed, retrying: {e}")
-                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                    await asyncio.sleep(2**attempt)  # Exponential backoff
                 else:
                     logger.error(f"All attempts failed for URL {url}: {e}")
                     return False
@@ -148,32 +147,34 @@ class WebScraperPlugin(Plugin):
         try:
             logger.info(f"Creating new page for {url}")
             page = await self._context.new_page()
-            
+
             # Set viewport size for better rendering
             await page.set_viewport_size({"width": 1920, "height": 1080})
-            
+
             # Add custom headers
-            await page.set_extra_http_headers({
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-                "Accept-Encoding": "gzip, deflate, br",
-                "Connection": "keep-alive",
-                "Upgrade-Insecure-Requests": "1"
-            })
-            
+            await page.set_extra_http_headers(
+                {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+                    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                    "Accept-Encoding": "gzip, deflate, br",
+                    "Connection": "keep-alive",
+                    "Upgrade-Insecure-Requests": "1",
+                }
+            )
+
             logger.info(f"Navigating to {url}")
             if not await self.try_goto_page(page, url, timeout=timeout):
                 return None
-            
+
             # Wait for dynamic content with reduced timeout
             logger.info("Waiting for 2 seconds")
             await asyncio.sleep(2)
-            
+
             # Get page title
             logger.info("Getting page title")
             title = await page.title()
-            
+
             # Try different selectors to find the main content
             selectors = [
                 "article.document",
@@ -187,12 +188,11 @@ class WebScraperPlugin(Plugin):
                 "#content",
                 ".main",
                 ".container",
-                "body"
+                "body",
             ]
-            
+
             content_element = None
-            used_selector = None
-            
+
             for sel in selectors:
                 logger.info(f"Trying selector: {sel}")
                 try:
@@ -202,12 +202,11 @@ class WebScraperPlugin(Plugin):
                         text = await element.text_content()
                         if len(text.strip()) > 50:  # Reduced minimum content length
                             content_element = element
-                            used_selector = sel
                             logger.info(f"Found content with selector: {sel}")
                             break
                 except Exception as e:
                     logger.debug(f"Selector {sel} failed: {e}")
-            
+
             if not content_element:
                 logger.warning("No suitable content found with any selector")
                 return None
@@ -216,46 +215,46 @@ class WebScraperPlugin(Plugin):
             logger.info("Getting content HTML and text")
             html = await content_element.inner_html()
             text = await content_element.text_content()
-            
+
             # Clean up HTML while preserving structure
-            soup = BeautifulSoup(html, 'html.parser')
-            
+            soup = BeautifulSoup(html, "html.parser")
+
             # Remove unwanted elements but preserve structure
-            for element in soup.find_all(['script', 'style', 'iframe', 'noscript']):
+            for element in soup.find_all(["script", "style", "iframe", "noscript"]):
                 element.decompose()
-            
+
             # Fix relative URLs for images and links
-            base_tag = soup.find('base')
-            base_url = base_tag['href'] if base_tag else url
-            
-            for img in soup.find_all('img'):
-                src = img.get('src', '')
+            base_tag = soup.find("base")
+            base_url = base_tag["href"] if base_tag else url
+
+            for img in soup.find_all("img"):
+                src = img.get("src", "")
                 if src:
-                    if not src.startswith(('http://', 'https://', 'data:')):
-                        img['src'] = urljoin(base_url, src)
+                    if not src.startswith(("http://", "https://", "data:")):
+                        img["src"] = urljoin(base_url, src)
                     # Preserve original dimensions
-                    if not img.get('width') and not img.get('height'):
-                        img['style'] = 'max-width: 100%; height: auto;'
-                        
-            for a in soup.find_all('a'):
-                href = a.get('href', '')
-                if href and not href.startswith(('http://', 'https://', '#', 'mailto:', 'tel:', 'javascript:')):
-                    a['href'] = urljoin(base_url, href)
-            
+                    if not img.get("width") and not img.get("height"):
+                        img["style"] = "max-width: 100%; height: auto;"
+
+            for a in soup.find_all("a"):
+                href = a.get("href", "")
+                if href and not href.startswith(("http://", "https://", "#", "mailto:", "tel:", "javascript:")):
+                    a["href"] = urljoin(base_url, href)
+
             # Preserve layout elements
-            for div in soup.find_all('div'):
-                if 'class' in div.attrs:
-                    div['class'] = ' '.join(div['class'])  # Preserve classes
-                if 'style' in div.attrs:
-                    div['style'] = div['style']  # Preserve styles
-            
+            for div in soup.find_all("div"):
+                if "class" in div.attrs:
+                    div["class"] = " ".join(div["class"])  # Preserve classes
+                if "style" in div.attrs:
+                    div["style"] = div["style"]  # Preserve styles
+
             html = str(soup)
-            
+
             logger.info(f"Content length - HTML: {len(html)}, Text: {len(text)}")
-            
+
             await page.close()
             return title, html, text
-            
+
         except Exception as e:
             logger.error(f"Error fetching URL {url}: {e}")
             return None
@@ -278,7 +277,7 @@ class WebScraperPlugin(Plugin):
 
             # Generate safe filename from URL
             img_filename = hashlib.md5(img_url.encode()).hexdigest()[:10]
-            img_filename += os.path.splitext(img_url)[-1] or '.jpg'
+            img_filename += os.path.splitext(img_url)[-1] or ".jpg"
             local_path = images_dir / img_filename
 
             # Skip if image already exists
@@ -291,32 +290,32 @@ class WebScraperPlugin(Plugin):
                 try:
                     # Set viewport size for better image capture
                     await img_page.set_viewport_size({"width": 1920, "height": 1080})
-                    
+
                     # Navigate to image URL
                     response = await img_page.goto(img_url, wait_until="networkidle", timeout=10000)
                     if not response:
                         logger.error(f"Failed to load image {img_url}: No response")
                         return None
-                        
+
                     # Check content type
                     content_type = response.headers.get("content-type", "")
                     if not content_type.startswith("image/"):
                         logger.error(f"Invalid content type for {img_url}: {content_type}")
                         return None
-                        
+
                     # Get image data
                     img_data = await response.body()
                     if not img_data:
                         logger.error(f"No image data received for {img_url}")
                         return None
-                        
+
                     # Save image
                     with open(local_path, "wb") as f:
                         f.write(img_data)
-                        
+
                     logger.info(f"Downloaded image: {img_url} -> {local_path}")
                     return f"images/{img_filename}"
-                    
+
                 except Exception as e:
                     logger.error(f"Failed to download image {img_url}: {e}")
                     return None
@@ -376,41 +375,41 @@ class WebScraperPlugin(Plugin):
             str: Formatted markdown text
         """
         try:
-            lines = text.split('\n')
+            lines = text.split("\n")
             processed_lines = []
             current_section = None
-            
+
             for line in lines:
                 line = line.rstrip()
-                
+
                 # Handle headings
-                if line.startswith('#'):
-                    if current_section != 'heading':
-                        processed_lines.append('')
+                if line.startswith("#"):
+                    if current_section != "heading":
+                        processed_lines.append("")
                     processed_lines.append(line)
-                    processed_lines.append('')
-                    current_section = 'heading'
+                    processed_lines.append("")
+                    current_section = "heading"
                     continue
 
                 # Handle lists
-                if line.lstrip().startswith(('- ', '* ', '1. ')):
-                    if current_section != 'list':
-                        processed_lines.append('')
+                if line.lstrip().startswith(("- ", "* ", "1. ")):
+                    if current_section != "list":
+                        processed_lines.append("")
                     processed_lines.append(line)
-                    current_section = 'list'
+                    current_section = "list"
                     continue
 
                 # Handle paragraphs
                 if line.strip():
-                    if current_section != 'paragraph':
-                        processed_lines.append('')
+                    if current_section != "paragraph":
+                        processed_lines.append("")
                     processed_lines.append(line)
-                    current_section = 'paragraph'
+                    current_section = "paragraph"
                 else:
                     if current_section:
-                        processed_lines.append('')
+                        processed_lines.append("")
                     current_section = None
-            
+
             # Remove consecutive empty lines
             result = []
             prev_empty = False
@@ -422,9 +421,9 @@ class WebScraperPlugin(Plugin):
                 else:
                     result.append(line)
                     prev_empty = False
-            
-            return '\n'.join(result).strip()
-            
+
+            return "\n".join(result).strip()
+
         except Exception as e:
             logger.error(f"Error formatting markdown: {e}")
             return text
@@ -446,7 +445,7 @@ class WebScraperPlugin(Plugin):
                 h.body_width = 0  # No wrapping
                 h.unicode_snob = True
                 h.escape_snob = True
-                
+
                 # Link settings
                 h.ignore_links = False
                 h.wrap_links = False
@@ -454,98 +453,98 @@ class WebScraperPlugin(Plugin):
                 h.protect_links = True
                 h.use_automatic_links = True
                 h.skip_internal_links = False
-                
+
                 # Image settings
                 h.ignore_images = False
-                h.handle_image = lambda src, alt='': f'\n![]({src})\n' if src else ''
-                
+                h.handle_image = lambda src, alt="": f"\n![]({src})\n" if src else ""
+
                 # List settings
                 h.ul_item_mark = "-"
                 h.wrap_list_items = False
                 h.list_indent = "  "
-                
+
                 # Table settings
                 h.ignore_tables = False
                 h.pad_tables = True
-                
+
                 # Formatting settings
-                h.emphasis_mark = '*'
-                h.strong_mark = '**'
+                h.emphasis_mark = "*"
+                h.strong_mark = "**"
                 h.single_line_break = True
                 h.mark_code = True
-                
+
                 # Convert HTML to Markdown
                 markdown = h.handle(html_content)
-                
+
                 # Post-process markdown
-                lines = markdown.split('\n')
+                lines = markdown.split("\n")
                 processed_lines = []
                 current_section = None
-                
+
                 for line in lines:
                     line = line.rstrip()
-                    
+
                     # Handle headings
-                    if line.startswith('#'):
-                        if current_section != 'heading':
-                            processed_lines.append('')
+                    if line.startswith("#"):
+                        if current_section != "heading":
+                            processed_lines.append("")
                         processed_lines.append(line)
-                        processed_lines.append('')
-                        current_section = 'heading'
+                        processed_lines.append("")
+                        current_section = "heading"
                         continue
-                    
+
                     # Handle images
-                    if line.startswith('!'):
-                        processed_lines.append('')
+                    if line.startswith("!"):
+                        processed_lines.append("")
                         processed_lines.append(line)
-                        processed_lines.append('')
-                        current_section = 'image'
+                        processed_lines.append("")
+                        current_section = "image"
                         continue
-                    
+
                     # Handle lists
-                    if line.lstrip().startswith(('- ', '* ', '1. ')):
-                        if current_section != 'list':
-                            processed_lines.append('')
+                    if line.lstrip().startswith(("- ", "* ", "1. ")):
+                        if current_section != "list":
+                            processed_lines.append("")
                         processed_lines.append(line)
-                        current_section = 'list'
+                        current_section = "list"
                         continue
-                    
+
                     # Handle code blocks
-                    if line.startswith('```'):
-                        processed_lines.append('')
+                    if line.startswith("```"):
+                        processed_lines.append("")
                         processed_lines.append(line)
-                        if not line.strip() == '```':
-                            current_section = 'code'
+                        if not line.strip() == "```":
+                            current_section = "code"
                         else:
                             current_section = None
                         continue
-                    
+
                     # Handle paragraphs
                     if line.strip():
-                        if current_section not in ('paragraph', 'code'):
-                            processed_lines.append('')
+                        if current_section not in ("paragraph", "code"):
+                            processed_lines.append("")
                         processed_lines.append(line)
-                        current_section = 'paragraph'
+                        current_section = "paragraph"
                     else:
                         if current_section:
-                            processed_lines.append('')
+                            processed_lines.append("")
                         current_section = None
-                
-                return '\n'.join(processed_lines).strip()
+
+                return "\n".join(processed_lines).strip()
             else:
                 # For text format, preserve some structure
-                soup = BeautifulSoup(html_content, 'html.parser')
+                soup = BeautifulSoup(html_content, "html.parser")
                 # Remove unwanted elements
-                for element in soup.find_all(['script', 'style', 'iframe']):
+                for element in soup.find_all(["script", "style", "iframe"]):
                     element.decompose()
                 # Get text with better spacing
                 lines = []
-                for element in soup.find_all(['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']):
+                for element in soup.find_all(["p", "div", "h1", "h2", "h3", "h4", "h5", "h6"]):
                     text = element.get_text(strip=True)
                     if text:
                         lines.append(text)
-                return '\n\n'.join(lines)
-                
+                return "\n\n".join(lines)
+
         except Exception as e:
             logger.error(f"Error parsing HTML: {e}")
             return ""
@@ -683,10 +682,8 @@ class WebScraperPlugin(Plugin):
                 return BasePluginResponse(
                     status="error",
                     error=BasePluginResponse.ErrorDetails(
-                        code="no_content",
-                        message=f"No content found at {url}",
-                        details={"url": url}
-                    )
+                        code="no_content", message=f"No content found at {url}", details={"url": url}
+                    ),
                 ).format_for_llm()
 
             title, html_content, text_content = content
@@ -713,49 +710,42 @@ class WebScraperPlugin(Plugin):
                 f.write("---\n\n")
 
                 # Process and write content
-                lines = markdown_content.split('\n')
+                lines = markdown_content.split("\n")
                 current_section = None
-                
+
                 for line in lines:
                     # Handle headings
-                    if line.startswith('#'):
-                        if current_section != 'heading':
-                            f.write('\n')
-                        f.write(line + '\n\n')
-                        current_section = 'heading'
+                    if line.startswith("#"):
+                        if current_section != "heading":
+                            f.write("\n")
+                        f.write(line + "\n\n")
+                        current_section = "heading"
                         continue
 
                     # Handle lists
-                    if line.lstrip().startswith(('- ', '* ', '1. ')):
-                        if current_section != 'list':
-                            f.write('\n')
-                        f.write(line + '\n')
-                        current_section = 'list'
+                    if line.lstrip().startswith(("- ", "* ", "1. ")):
+                        if current_section != "list":
+                            f.write("\n")
+                        f.write(line + "\n")
+                        current_section = "list"
                         continue
 
                     # Handle paragraphs
                     if line.strip():
-                        if current_section != 'paragraph':
-                            f.write('\n')
-                        f.write(line + '\n')
-                        current_section = 'paragraph'
+                        if current_section != "paragraph":
+                            f.write("\n")
+                        f.write(line + "\n")
+                        current_section = "paragraph"
                     else:
                         if current_section:
-                            f.write('\n')
+                            f.write("\n")
                         current_section = None
 
             response = BasePluginResponse(
                 status="success",
                 message=f"Successfully scraped content from {url}",
-                data={
-                    "url": url,
-                    "title": title,
-                    "output_file": str(filepath)
-                },
-                metadata=BasePluginResponse.ResponseMetadata(
-                    source=self.name,
-                    version=self.version
-                )
+                data={"url": url, "title": title, "output_file": str(filepath)},
+                metadata=BasePluginResponse.ResponseMetadata(source=self.name, version=self.version),
             )
             return response.format_for_llm()
 
@@ -763,15 +753,8 @@ class WebScraperPlugin(Plugin):
             logger.error(f"Error scraping {url}: {str(e)}")
             response = BasePluginResponse(
                 status="error",
-                error=BasePluginResponse.ErrorDetails(
-                    code="scraping_error",
-                    message=str(e),
-                    details={"url": url}
-                ),
-                metadata=BasePluginResponse.ResponseMetadata(
-                    source=self.name,
-                    version=self.version
-                )
+                error=BasePluginResponse.ErrorDetails(code="scraping_error", message=str(e), details={"url": url}),
+                metadata=BasePluginResponse.ResponseMetadata(source=self.name, version=self.version),
             )
             return response.format_for_llm()
 
@@ -788,30 +771,31 @@ class WebScraperPlugin(Plugin):
         Returns:
             Click command
         """
+
         @click.command(help=self.description)
         @click.argument("url", type=str)
         @click.option(
-            "--output-dir", "-o",
+            "--output-dir",
+            "-o",
             default=str(get_downloads_dir()),
             help="Directory to save scraped content (default: user downloads directory)",
-            type=click.Path(file_okay=False, dir_okay=True, path_type=str)
+            type=click.Path(file_okay=False, dir_okay=True, path_type=str),
         )
         @click.option(
-            "--selector", "-s",
+            "--selector",
+            "-s",
             default="article, main, .content, .main, #content, #main, body",
             help="CSS selector to extract specific content (default: common content elements)",
-            type=str
+            type=str,
         )
         @click.option(
-            "--recursive/--no-recursive", "-r/-R",
+            "--recursive/--no-recursive",
+            "-r/-R",
             default=False,
-            help="Recursively scrape linked pages (default: False)"
+            help="Recursively scrape linked pages (default: False)",
         )
         @click.option(
-            "--max-depth", "-d",
-            default=1,
-            help="Maximum depth for recursive scraping (default: 1)",
-            type=int
+            "--max-depth", "-d", default=1, help="Maximum depth for recursive scraping (default: 1)", type=int
         )
         def command(url: str, output_dir: str, selector: str, recursive: bool, max_depth: int):
             """Scrape web content from URLs.
@@ -823,15 +807,12 @@ class WebScraperPlugin(Plugin):
                 recursive: Recursively scrape linked pages
                 max_depth: Maximum depth for recursive scraping
             """
+
             async def _run():
                 try:
                     async with self:
                         result = await self.execute(
-                            url=url,
-                            output_dir=output_dir,
-                            selector=selector,
-                            recursive=recursive,
-                            max_depth=max_depth
+                            url=url, output_dir=output_dir, selector=selector, recursive=recursive, max_depth=max_depth
                         )
                         click.echo(result)
                         return result
@@ -841,14 +822,9 @@ class WebScraperPlugin(Plugin):
                     result = BasePluginResponse(
                         status="error",
                         error=BasePluginResponse.ErrorDetails(
-                            code="command_error",
-                            message=error_msg,
-                            details={"url": url}
+                            code="command_error", message=error_msg, details={"url": url}
                         ),
-                        metadata=BasePluginResponse.ResponseMetadata(
-                            source=self.name,
-                            version=self.version
-                        )
+                        metadata=BasePluginResponse.ResponseMetadata(source=self.name, version=self.version),
                     ).format_for_llm()
                     click.echo(result, err=True)
                     return result
@@ -865,14 +841,9 @@ class WebScraperPlugin(Plugin):
                 result = BasePluginResponse(
                     status="error",
                     error=BasePluginResponse.ErrorDetails(
-                        code="operation_cancelled",
-                        message="Operation cancelled by user",
-                        details={"url": url}
+                        code="operation_cancelled", message="Operation cancelled by user", details={"url": url}
                     ),
-                    metadata=BasePluginResponse.ResponseMetadata(
-                        source=self.name,
-                        version=self.version
-                    )
+                    metadata=BasePluginResponse.ResponseMetadata(source=self.name, version=self.version),
                 ).format_for_llm()
                 click.echo(result, err=True)
                 return result
@@ -882,14 +853,9 @@ class WebScraperPlugin(Plugin):
                 result = BasePluginResponse(
                     status="error",
                     error=BasePluginResponse.ErrorDetails(
-                        code="unexpected_error",
-                        message=f"Unexpected error: {error_msg}",
-                        details={"url": url}
+                        code="unexpected_error", message=f"Unexpected error: {error_msg}", details={"url": url}
                     ),
-                    metadata=BasePluginResponse.ResponseMetadata(
-                        source=self.name,
-                        version=self.version
-                    )
+                    metadata=BasePluginResponse.ResponseMetadata(source=self.name, version=self.version),
                 ).format_for_llm()
                 click.echo(result, err=True)
                 return result

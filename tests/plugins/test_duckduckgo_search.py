@@ -63,7 +63,7 @@ def test_click_command(search_plugin):
     assert "region" in param_names
     assert "safesearch" in param_names
     assert "time" in param_names
-    assert "max-results" in param_names
+    assert "max_results" in param_names
 
 
 def test_format_response(search_plugin):
@@ -88,44 +88,172 @@ def test_format_error(search_plugin):
     assert isinstance(result, str)
 
     parsed = json.loads(result)
+    assert parsed["status"] == "error"
+    assert parsed["message"] == error_msg
     assert "error" in parsed
-    assert parsed["error"] == error_msg
+    assert parsed["error"]["code"] == "search_error"
+    assert parsed["error"]["message"] == error_msg
 
 
 @pytest.mark.asyncio
 async def test_execute_success(search_plugin, tmp_path, mocker):
     """Test successful execution."""
-    # Mock DDGS context manager
-    mock_ddgs = mocker.MagicMock()
-    mock_ddgs.__enter__.return_value.text.return_value = [
-        {"title": "Test Result", "link": "https://example.com", "body": "Test snippet"}
-    ]
-    mocker.patch("ai_rules.plugins.duckduckgo_search.DDGS", return_value=mock_ddgs)
+    # Mock HTTPClient
+    mock_response = mocker.AsyncMock()
+    mock_response.status = 200
+    mock_response.text = mocker.AsyncMock(return_value=json.dumps({
+        "RelatedTopics": [
+            {
+                "FirstURL": "https://example.com",
+                "Result": "Test snippet",
+                "Text": "Test Result"
+            }
+        ],
+        "Abstract": "",
+        "AbstractSource": "",
+        "AbstractText": "",
+        "AbstractURL": "",
+        "Answer": "",
+        "AnswerType": "",
+        "Definition": "",
+        "DefinitionSource": "",
+        "DefinitionURL": "",
+        "Heading": "",
+        "Image": "",
+        "ImageHeight": 0,
+        "ImageIsLogo": 0,
+        "ImageWidth": 0,
+        "Infobox": "",
+        "Redirect": "",
+        "Type": "",
+        "meta": {
+            "attribution": None,
+            "blockgroup": None,
+            "created_date": None,
+            "description": None,
+            "designer": None,
+            "dev_date": None,
+            "dev_milestone": None,
+            "developer": None,
+            "example_query": None,
+            "id": None,
+            "is_stackexchange": None,
+            "js_callback_name": None,
+            "live_date": None,
+            "maintainer": None,
+            "name": None,
+            "perl_module": None,
+            "producer": None,
+            "production_state": None,
+            "repo": None,
+            "signal_from": None,
+            "src_domain": None,
+            "src_id": None,
+            "src_name": None,
+            "src_options": None,
+            "src_url": None,
+            "status": None,
+            "tab": None,
+            "topic": None,
+            "unsafe": None
+        }
+    }))
+    mock_response.json = mocker.AsyncMock(return_value={
+        "RelatedTopics": [
+            {
+                "FirstURL": "https://example.com",
+                "Result": "Test snippet",
+                "Text": "Test Result"
+            }
+        ],
+        "Abstract": "",
+        "AbstractSource": "",
+        "AbstractText": "",
+        "AbstractURL": "",
+        "Answer": "",
+        "AnswerType": "",
+        "Definition": "",
+        "DefinitionSource": "",
+        "DefinitionURL": "",
+        "Heading": "",
+        "Image": "",
+        "ImageHeight": 0,
+        "ImageIsLogo": 0,
+        "ImageWidth": 0,
+        "Infobox": "",
+        "Redirect": "",
+        "Type": "",
+        "meta": {
+            "attribution": None,
+            "blockgroup": None,
+            "created_date": None,
+            "description": None,
+            "designer": None,
+            "dev_date": None,
+            "dev_milestone": None,
+            "developer": None,
+            "example_query": None,
+            "id": None,
+            "is_stackexchange": None,
+            "js_callback_name": None,
+            "live_date": None,
+            "maintainer": None,
+            "name": None,
+            "perl_module": None,
+            "producer": None,
+            "production_state": None,
+            "repo": None,
+            "signal_from": None,
+            "src_domain": None,
+            "src_id": None,
+            "src_name": None,
+            "src_options": None,
+            "src_url": None,
+            "status": None,
+            "tab": None,
+            "topic": None,
+            "unsafe": None
+        }
+    })
 
-    # Mock output directory
-    mocker.patch("ai_rules.plugins.duckduckgo_search.get_web_content_dir", return_value=tmp_path)
+    mock_client = mocker.AsyncMock()
+    mock_client.__aenter__.return_value.get = mocker.AsyncMock(return_value=mock_response)
+
+    mocker.patch("ai_rules.core.http_client.HTTPClient", return_value=mock_client)
 
     result = await search_plugin.execute(query="test query", max_results=1, region="wt-wt")
 
     assert isinstance(result, str)
     parsed = json.loads(result)
-    assert "data" in parsed
-    assert "message" in parsed
-    assert len(parsed["data"]["results"]) == 1
+    assert parsed["status"] == "success"
+    assert parsed["data"]["results"][0]["title"] == "Test Result"
+    assert parsed["data"]["results"][0]["url"] == "https://example.com"
+    assert parsed["data"]["results"][0]["description"] == "Test snippet"
     assert parsed["data"]["total"] == 1
+    assert parsed["data"]["query"] == "test query"
 
 
 @pytest.mark.asyncio
 async def test_execute_error(search_plugin, mocker):
     """Test execution with error."""
-    # Mock DDGS to raise an exception
-    mock_ddgs = mocker.MagicMock()
-    mock_ddgs.__enter__.return_value.text.side_effect = Exception("Test error")
-    mocker.patch("ai_rules.plugins.duckduckgo_search.DDGS", return_value=mock_ddgs)
+    # Mock HTTPClient to raise an exception
+    mock_response = mocker.AsyncMock()
+    mock_response.status = 500
+    mock_response.text = mocker.AsyncMock(return_value='{"error": "Internal Server Error"}')
+    mock_response.json = mocker.AsyncMock(return_value={"error": "Internal Server Error"})
+
+    mock_client = mocker.AsyncMock()
+    mock_client.__aenter__.return_value.get = mocker.AsyncMock(side_effect=aiohttp.ClientResponseError(
+        status=500,
+        message="Internal Server Error",
+        request_info=None,
+        history=None,
+    ))
+    mocker.patch("ai_rules.core.http_client.HTTPClient", return_value=mock_client)
 
     result = await search_plugin.execute(query="test query")
-    assert isinstance(result, str)
 
+    assert isinstance(result, str)
     parsed = json.loads(result)
-    assert "error" in parsed
-    assert parsed["error"] == "Test error"
+    assert parsed["status"] == "error"
+    assert "HTTP error: 500, message='Internal Server Error'" in parsed["message"]

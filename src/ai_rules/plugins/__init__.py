@@ -1,28 +1,15 @@
-"""AI Rules CLI plugins package."""
+"""AI Rules CLI plugins package.
+
+This package contains all built-in plugins for the AI Rules CLI tool.
+Each plugin is implemented as a subclass of the Plugin base class and provides
+specific functionality through the Click command interface.
+"""
 
 # Import built-in modules
-from typing import List, Type
+import logging
 
-# Import local modules
-from ai_rules.core.plugin import Plugin
-from ai_rules.plugins.duckduckgo_search import SearchPlugin
-from ai_rules.plugins.local_search import LocalSearchPlugin
-from ai_rules.plugins.translate import TranslatePlugin
-from ai_rules.plugins.web_scraper import WebScraperPlugin
-from ai_rules.plugins.news_search import NewsPlugin
-from ai_rules.plugins.api_docs import APIDocs
+# Configure logger
+logger = logging.getLogger(__name__)
 
-def get_plugins() -> List[Type[Plugin]]:
-    """Get list of available plugins.
-
-    Returns:
-        List of plugin classes
-    """
-    return [
-        APIDocs,
-        SearchPlugin,
-        LocalSearchPlugin,
-        TranslatePlugin,
-        WebScraperPlugin,
-        NewsPlugin
-    ]
+# Initialize logging
+logger.debug("Plugins package initialized")
