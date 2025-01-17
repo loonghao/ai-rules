@@ -1,113 +1,95 @@
-"""Test cases for the local_search plugin."""
+"""Tests for LocalSearchPlugin."""
 
-# Import built-in modules
-import json
+import tempfile
+from pathlib import Path
+from typing import Generator
 
-# Import third-party modules
 import pytest
 
-# Import local modules
 from ai_rules.plugins.local_search import LocalSearchPlugin
 
 
 @pytest.fixture
 def local_search_plugin():
     """Fixture for creating a LocalSearchPlugin instance."""
-    return LocalSearchPlugin()
+    plugin = LocalSearchPlugin()
+    yield plugin
+    plugin.close()
+
+
+@pytest.fixture
+def temp_dir() -> Generator[Path, None, None]:
+    """Create a temporary directory for testing."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        yield Path(temp_dir)
 
 
 @pytest.mark.asyncio
-async def test_search_directory(local_search_plugin, tmp_path):
-    """Test directory search."""
+async def test_search_directory(local_search_plugin, temp_dir):
+    """Test searching in a directory."""
+    # Create test file
+    test_file = temp_dir / "test.txt"
+    test_file.write_text("This is a test file with some content")
+
+    # Search for content
+    results = await local_search_plugin.execute(directory=temp_dir, query="test file")
+
+    assert len(results) == 1
+    assert results[0]["file"] == str(test_file)
+    assert results[0]["score"] > 0
+
+
+@pytest.mark.asyncio
+async def test_search_directory_with_pattern(local_search_plugin, temp_dir):
+    """Test searching with file pattern."""
     # Create test files
-    test_file = tmp_path / "test.txt"
-    test_file.write_text("test content")
+    txt_file = temp_dir / "test.txt"
+    txt_file.write_text("This is a text file")
 
-    results = await local_search_plugin._search_directory(str(tmp_path), "test")
-    assert len(results) > 0
-    assert any(str(test_file) in result["path"] for result in results)
+    md_file = temp_dir / "test.md"
+    md_file.write_text("This is a markdown file")
 
+    # Search with pattern
+    results = await local_search_plugin.execute(directory=temp_dir, query="file", pattern="*.txt")
 
-@pytest.mark.asyncio
-async def test_search_directory_with_pattern(local_search_plugin, tmp_path):
-    """Test directory search with pattern."""
-    # Create test files
-    test_file = tmp_path / "test.txt"
-    test_file.write_text("test content")
-    other_file = tmp_path / "other.txt"
-    other_file.write_text("other content")
-
-    results = await local_search_plugin._search_directory(str(tmp_path), "test", pattern="*.txt")
-    assert len(results) > 0
-    assert any(str(test_file) in result["path"] for result in results)
+    assert len(results) == 1
+    assert results[0]["file"] == str(txt_file)
 
 
 @pytest.mark.asyncio
-async def test_execute_success(local_search_plugin, tmp_path):
+async def test_execute_success(local_search_plugin, temp_dir):
     """Test successful execution."""
-    test_file = tmp_path / "test.txt"
-    test_file.write_text("test content")
+    test_file = temp_dir / "test.txt"
+    test_file.write_text("Sample content for testing")
 
-    result = await local_search_plugin.execute(directory=str(tmp_path), query="test", pattern="*.txt")
-    assert isinstance(result, str)
-    response = json.loads(result)
-    assert response["status"] == "success"
-    assert "message" in response
-    assert "data" in response
-    assert isinstance(response["data"]["matches"], list)
+    results = await local_search_plugin.execute(directory=temp_dir, query="sample content")
+
+    assert len(results) > 0
+    assert all(isinstance(r["file"], str) for r in results)
+    assert all(isinstance(r["score"], float) for r in results)
 
 
 @pytest.mark.asyncio
-async def test_execute_no_results(local_search_plugin, tmp_path):
+async def test_execute_no_results(local_search_plugin, temp_dir):
     """Test execution with no results."""
-    result = await local_search_plugin.execute(directory=str(tmp_path), query="nonexistent", pattern="*.txt")
-    assert isinstance(result, str)
-    response = json.loads(result)
-    assert response["status"] == "success"
-    assert "message" in response
-    assert "data" in response
-    assert len(response["data"]["matches"]) == 0
+    test_file = temp_dir / "test.txt"
+    test_file.write_text("Sample content")
+
+    results = await local_search_plugin.execute(directory=temp_dir, query="nonexistent content")
+
+    assert len(results) == 0
 
 
 @pytest.mark.asyncio
-async def test_execute_invalid_path(local_search_plugin):
-    """Test execution with invalid path."""
-    result = await local_search_plugin.execute(directory="/nonexistent/path", query="test", pattern="*.txt")
-    assert isinstance(result, str)
-    response = json.loads(result)
-    assert response["status"] == "error"
-    assert "Directory not found" in response["message"]
+async def test_execute_invalid_directory(local_search_plugin):
+    """Test execution with invalid directory."""
+    nonexistent_dir = Path("C:/nonexistent/directory")
+    with pytest.raises(ValueError, match="Directory does not exist"):
+        await local_search_plugin.execute(directory=nonexistent_dir, query="test")
 
 
-def test_click_command(local_search_plugin):
-    """Test click command configuration."""
-    command = local_search_plugin.click_command
-    assert command.name == "local"
-    assert command.help == "Search files in local directory"
-    assert len(command.params) == 3
-    param_names = [param.name for param in command.params]
-    assert "directory" in param_names
-    assert "query" in param_names
-    assert "pattern" in param_names
-
-
-def test_format_response(local_search_plugin):
-    """Test response formatting."""
-    data = {"matches": [{"path": "/test/file.txt", "line": 1, "content": "test content"}]}
-    message = "Test message"
-    response = local_search_plugin.format_response(data, message)
-    assert isinstance(response, str)
-    parsed = json.loads(response)
-    assert parsed["status"] == "success"
-    assert parsed["message"] == message
-    assert parsed["data"] == data
-
-
-def test_format_error(local_search_plugin):
-    """Test error formatting."""
-    error_msg = "Test error"
-    response = local_search_plugin.format_error(error_msg)
-    assert isinstance(response, str)
-    parsed = json.loads(response)
-    assert parsed["status"] == "error"
-    assert parsed["message"] == error_msg
+@pytest.mark.asyncio
+async def test_execute_empty_query(local_search_plugin, temp_dir):
+    """Test execution with empty query."""
+    with pytest.raises(ValueError, match="Query cannot be empty"):
+        await local_search_plugin.execute(directory=temp_dir, query="")

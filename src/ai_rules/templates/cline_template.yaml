@@ -6,7 +6,7 @@ extends: base_template.yaml
 # CLI-specific Configurations
 cli_specific:
   venv_path: "./venv"
-  file_extension: ".clirules"
+  file_extension: ".clinerules"
   
   # CLI-specific tool configurations
   tools:

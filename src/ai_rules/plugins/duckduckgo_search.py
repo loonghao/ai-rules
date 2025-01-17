@@ -1,32 +1,42 @@
-"""DuckDuckGo search plugin."""
+"""DuckDuckGo search plugin.
+
+This module provides a plugin for searching the web using DuckDuckGo's search API.
+The plugin supports various search parameters such as region, safesearch, and time range.
+Results are returned in a structured JSON format suitable for LLM parsing.
+"""
 
 # Import built-in modules
 import asyncio
 import json
 import logging
-import os
+import urllib.parse
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+
+import aiohttp
 
 # Import third-party modules
 import click
-from duckduckgo_search import DDGS
+from bs4 import BeautifulSoup
 from pydantic import BaseModel
 
+from ai_rules.core.http_client import HTTPClient
+
 # Import local modules
-from ai_rules.core.plugin import Plugin
+from ai_rules.core.plugin import BasePluginResponse, Plugin
 
 # Configure logger
-logger: logging.Logger = logging.getLogger(__name__)
-
-
-def get_web_content_dir() -> Path:
-    return Path(__file__).parent / "web_content"
+logger = logging.getLogger(__name__)
 
 
 class SearchResult(BaseModel):
-    """Model for search results."""
+    """Model for search results.
+
+    Attributes:
+        title: Title of the search result
+        link: URL of the search result
+        snippet: Text snippet from the search result
+    """
 
     title: str
     link: str
@@ -34,183 +44,333 @@ class SearchResult(BaseModel):
 
 
 class SearchResponse(BaseModel):
-    """Response model for search."""
+    """Response model for search.
+
+    Attributes:
+        results: List of search results
+        total: Total number of results found
+    """
 
     results: List[SearchResult]
     total: int
 
 
+class SearchError(Exception):
+    """Base exception for search errors."""
+
+    pass
+
+
+class HTTPError(SearchError):
+    """HTTP request error."""
+
+    def __init__(self, message: str, status_code: int = None):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+class ParsingError(SearchError):
+    """Error parsing search results."""
+
+    pass
+
+
 class SearchPlugin(Plugin):
-    """DuckDuckGo search plugin."""
+    """DuckDuckGo search plugin.
+
+    This plugin provides a command-line interface for searching the web using
+    DuckDuckGo's search API. It supports various search parameters and returns
+    results in a structured format.
+    """
+
+    def __init__(self) -> None:
+        """Initialize plugin."""
+        super().__init__()
+        self._name = "search"
+        self._description = "Search the web using DuckDuckGo"
+        self._base_url = "https://api.duckduckgo.com/"
 
     @property
     def name(self) -> str:
         """Get plugin name."""
-        return "search"
+        return self._name
 
     @property
     def description(self) -> str:
         """Get plugin description."""
-        return "Search the web using DuckDuckGo"
+        return self._description
 
     @property
     def click_command(self) -> click.Command:
-        """Get the click command for this plugin.
+        """Get click command for the plugin.
 
         Returns:
-            Click command
+            Click command that wraps this plugin's functionality.
         """
 
-        @click.command(name=self.name, help=self.description)
-        @click.argument("query")
-        @click.option("--region", default="wt-wt", help="Region for search results (default: wt-wt)")
+        @click.command(name="search", help="Search the web using DuckDuckGo")
+        @click.argument("query", type=str)
+        @click.option(
+            "--region",
+            type=str,
+            default="wt-wt",
+            help="Region for search results (e.g., us-en, uk-en)",
+        )
         @click.option(
             "--safesearch",
             type=click.Choice(["on", "moderate", "off"]),
             default="moderate",
-            help="Safe search level (default: moderate)",
+            help="SafeSearch setting",
         )
         @click.option(
             "--time",
             type=click.Choice(["d", "w", "m", "y"]),
             default=None,
-            help="Time range: d=day, w=week, m=month, y=year",
+            help="Time range (d: day, w: week, m: month, y: year)",
         )
-        @click.option("--max-results", default=10, help="Maximum number of results to return (default: 10)")
-        def command(query, region, safesearch, time, max_results):
-            """Search the web using DuckDuckGo.
+        @click.option(
+            "--max-results",
+            "max_results",  # Use this as the parameter name
+            type=int,
+            default=5,
+            help="Maximum number of results to return",
+        )
+        def search_command(**kwargs) -> str:
+            """Execute the search command.
 
             Args:
-                query: Search query
-                region: Region for search results
-                safesearch: Safe search level
-                time: Time range
-                max_results: Maximum number of results to return
+                kwargs: Keyword arguments from Click
+
+            Returns:
+                JSON string containing search results
             """
-            return asyncio.run(
-                self.execute(query=query, region=region, safesearch=safesearch, time=time, max_results=max_results)
-            )
+            try:
+                result = asyncio.run(self.execute(**kwargs))
+                click.echo(result)
+                return result
+            except Exception as e:
+                logger.error("Command execution failed: %s", str(e))
+                click.echo(f"Error: {str(e)}", err=True)
+                return None
 
-        return command
+        return search_command
 
-    def execute(self, **kwargs) -> str:
-        """Execute DuckDuckGo search.
+    async def search_duckduckgo(
+        self,
+        query: str,
+        region: str = "wt-wt",
+        safesearch: str = "moderate",
+        time: Optional[str] = None,
+        max_results: int = 5,
+    ) -> List[Dict[str, str]]:
+        """Search DuckDuckGo.
 
         Args:
-            **kwargs: Keyword arguments
-                query: Search query
-                max_results: Maximum number of results to return
-                region: Region for search results
+            query: Search query
+            region: Region code (default: wt-wt)
+            safesearch: SafeSearch setting (default: moderate)
+            time: Time range (d: day, w: week, m: month, y: year)
+            max_results: Maximum number of results to return (default: 5)
 
         Returns:
-            Formatted string containing search results
+            List of search results
+
+        Raises:
+            HTTPError: If the request fails
+            ParsingError: If the response cannot be parsed
+            ValueError: If the parameters are invalid
         """
+        logger.info(
+            "Searching with query: '%s', region: %s, safesearch: %s, time: %s",
+            query,
+            region,
+            safesearch,
+            time,
+        )
+
+        params = {
+            "q": query,
+            "format": "json",
+            "kl": region,
+            "kp": safesearch,
+        }
+        if time is not None:
+            params["t"] = time
+
         try:
-            # Get parameters
-            query = kwargs.get("query")
-            max_results = kwargs.get("max_results", 10)
-            region = kwargs.get("region", "wt-wt")
+            async with HTTPClient() as client:
+                response = await client.get(
+                    "https://api.duckduckgo.com/",
+                    params=params,
+                )
 
-            # Create output directory if it doesn't exist
-            output_dir = str(get_web_content_dir())
-            os.makedirs(output_dir, exist_ok=True)
+                # Get response text first
+                text = await response.text()
+                try:
+                    data = json.loads(text)
+                except json.JSONDecodeError as e:
+                    logger.error("Failed to parse JSON response: %s", str(e))
+                    raise ParsingError(f"Failed to parse JSON response: {str(e)}")
 
-            # Create filenames for both JSON and Markdown
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            base_name = f"duckduckgo_search_{timestamp}"
-            json_file = os.path.join(output_dir, f"{base_name}.json")
-            markdown_file = os.path.join(output_dir, f"{base_name}.md")
+            if not isinstance(data, dict):
+                logger.error("Invalid response format: not a dictionary")
+                raise ParsingError("Invalid response format: not a dictionary")
 
-            # Search DuckDuckGo
-            logger.debug("Searching DuckDuckGo with query: %s, region: %s", query, region)
+            if "RelatedTopics" not in data:
+                logger.warning("No RelatedTopics in response")
+                return []
+
+            if not isinstance(data["RelatedTopics"], list):
+                logger.error("Invalid RelatedTopics format: not a list")
+                raise ParsingError("Invalid RelatedTopics format: not a list")
+
             results = []
-            with DDGS() as ddgs:
-                for r in ddgs.text(query, region=region):
-                    if len(results) >= max_results:
-                        break
-                    logger.debug("Raw search result: %s", r)
-                    result = SearchResult(title=r.get("title", ""), link=r.get("link", ""), snippet=r.get("body", ""))
-                    logger.debug("Parsed search result: %s", result)
-                    results.append(result)
+            for result in data["RelatedTopics"][:max_results]:
+                if not isinstance(result, dict):
+                    continue
+                if "FirstURL" not in result or "Text" not in result:
+                    continue
+                results.append(
+                    {
+                        "title": result.get("Text", ""),
+                        "url": result.get("FirstURL", ""),
+                        "description": result.get("Result", result.get("Text", "")),
+                    }
+                )
 
-            # Create response
-            response = SearchResponse(results=results, total=len(results))
+            return results
 
-            # Save as JSON
-            with open(json_file, "w", encoding="utf-8") as f:
-                json.dump(response.model_dump(), f, indent=2, ensure_ascii=False)
-
-            # Save as Markdown
-            with open(markdown_file, "w", encoding="utf-8") as f:
-                # Add YAML frontmatter
-                f.write("---\n")
-                f.write(f"query: {query}\n")
-                f.write(f"date: {datetime.now().isoformat()}\n")
-                f.write(f"total_results: {len(results)}\n")
-                f.write("source: duckduckgo-search\n")
-                f.write("---\n\n")
-
-                # Add title
-                f.write(f"# Search Results: {query}\n\n")
-
-                # Add each result
-                for i, result in enumerate(results, 1):
-                    f.write(f"## {i}. {result.title}\n\n")
-                    f.write(f"**Link**: {result.link}  \n\n")
-                    f.write(f"{result.snippet}\n\n")
-                    f.write("---\n\n")
-
-            # Format response
-            formatted_response = self.format_response(
-                data=response.model_dump(),
-                message=f"Found {len(results)} results for '{query}' (saved to {markdown_file})",
-            )
-
-            # Print response
-            print(formatted_response)
-            return formatted_response
-
+        except aiohttp.ClientResponseError as e:
+            logger.error("HTTP error during search: %s", str(e))
+            raise HTTPError(f"HTTP error: {str(e)}", e.status)
+        except (ValueError, KeyError) as e:
+            logger.error("Error parsing response: %s", str(e))
+            raise ParsingError(f"Failed to parse response: {str(e)}")
         except Exception as e:
-            logger.error("Error executing DuckDuckGo search: %s", str(e))
-            error_response = self.format_error(str(e))
-            print(error_response)
-            return error_response
+            logger.error("Unexpected error during search: %s", str(e))
+            raise
 
-    def format_response(self, data: Dict[str, Any], message: str = "") -> str:
-        """Format response data as JSON string.
+    async def execute(self, **kwargs) -> str:
+        """Execute the plugin.
 
         Args:
-            data: Dictionary containing response data.
-            message: Optional message to include in the response.
+            kwargs: Keyword arguments from Click
 
         Returns:
-            JSON string containing formatted response data.
-        """
-        response_data = {"data": data}
-        if message:
-            response_data["message"] = message
-        return json.dumps(response_data, indent=2, ensure_ascii=False)
+            JSON string containing search results
 
-    def format_error(self, error: str) -> str:
-        """Format error message as JSON string.
+        Raises:
+            ValueError: If required parameters are missing
+        """
+        if "query" not in kwargs:
+            raise ValueError("Missing required parameter: query")
+
+        # Convert max-results to max_results if present
+        if "max-results" in kwargs:
+            kwargs["max_results"] = int(kwargs.pop("max-results"))
+        elif "max_results" in kwargs:
+            kwargs["max_results"] = int(kwargs["max_results"])
+
+        try:
+            results = await self.search_duckduckgo(**kwargs)
+            if results:
+                response = BasePluginResponse(
+                    status="success",
+                    message=f"Found {len(results)} results for query: {kwargs['query']}",
+                    data={
+                        "results": results,
+                        "total": len(results),
+                        "query": kwargs["query"],
+                    },
+                    metadata={
+                        "plugin_name": self.name,
+                        "plugin_version": self.version,
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                )
+                return response.format_for_llm()
+            else:
+                response = BasePluginResponse(
+                    status="error",
+                    message="No results found",
+                    data={},
+                    metadata={
+                        "plugin_name": self.name,
+                        "plugin_version": self.version,
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                )
+                return response.format_for_llm()
+        except Exception as e:
+            # Re-raise the exception if it's a ValueError
+            if isinstance(e, ValueError):
+                raise
+            response = BasePluginResponse(
+                status="error",
+                message=str(e),
+                data={},
+                metadata={
+                    "plugin_name": self.name,
+                    "plugin_version": self.version,
+                    "timestamp": datetime.now().isoformat(),
+                }
+            )
+            return response.format_for_llm()
+
+    def format_response(self, data: Dict[str, Any], message: str) -> str:
+        """Format successful response.
 
         Args:
-            error: Error message to include in the response.
+            data: Response data
+            message: Response message
 
         Returns:
-            JSON string containing formatted error message.
+            JSON string containing formatted response
         """
-        return json.dumps({"error": error}, indent=2, ensure_ascii=False)
+        response = BasePluginResponse(
+            status="success",
+            data=data,
+            message=message,
+            metadata={
+                "plugin_name": self.name,
+                "plugin_version": self.version,
+                "timestamp": datetime.now().isoformat(),
+            },
+        )
+        return response.format_for_llm()
+
+    def format_error(self, error_message: str) -> str:
+        """Format error response.
+
+        Args:
+            error_message: Error message
+
+        Returns:
+            JSON string containing error message
+        """
+        response = BasePluginResponse(
+            status="error",
+            message=error_message,
+            error={
+                "code": "search_error",
+                "message": error_message,
+            },
+            metadata={
+                "plugin_name": self.name,
+                "plugin_version": self.version,
+                "timestamp": datetime.now().isoformat(),
+            }
+        )
+        return response.format_for_llm()
 
     def get_metadata(self) -> Dict[str, Any]:
         """Get plugin metadata.
 
         Returns:
-            Dictionary containing plugin metadata.
+            Dictionary containing plugin metadata
         """
         return {
             "name": self.name,
             "description": self.description,
-            "version": "1.0.0",
-            "author": "AI Rules Team",
+            "version": self.version,
         }

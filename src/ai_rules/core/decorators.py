@@ -1,34 +1,33 @@
-"""Decorators for AI Rules CLI."""
+"""Decorators for the AI Rules framework."""
 
 # Import built-in modules
-from typing import Callable, Type
+from typing import Any, Type
 
 # Import local modules
 from .plugin import Plugin, PluginManager
 
 
-def register_plugin(name: str, description: str) -> Callable[[Type[Plugin]], Type[Plugin]]:
-    """Register a plugin with the given name and description.
+def register_plugin(name: str) -> Any:
+    """Register a plugin class.
 
     Args:
-        name: Name of the plugin.
-        description: Description of the plugin.
+        name: Name of the plugin
 
     Returns:
-        Decorator function that registers the plugin.
+        Decorated plugin class
     """
 
-    def decorator(plugin_class: Type[Plugin]) -> Type[Plugin]:
-        """Decorator function that registers the plugin.
+    def decorator(cls: Type[Plugin]) -> Type[Plugin]:
+        """Register plugin class with PluginManager.
 
         Args:
-            plugin_class: The plugin class to register.
+            cls: Plugin class to register
 
         Returns:
-            The registered plugin class.
+            Registered plugin class
         """
-        plugin_class.name = name
-        plugin_class.description = description
-        return PluginManager.register(plugin_class)
+        cls.name = staticmethod(lambda: name)
+        PluginManager.register(cls)
+        return cls
 
     return decorator

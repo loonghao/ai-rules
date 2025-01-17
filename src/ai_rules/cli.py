@@ -1,23 +1,26 @@
 #!/usr/bin/env python3
 """
-AI Rules CLI tool for managing AI assistant configurations and running AI-powered tools.
+AI Rules CLI tool.
+
+This module provides the command-line interface for the AI Rules tool.
+It includes commands for managing plugins, scripts, and configurations.
 """
 
 # Import built-in modules
 import logging
 import os
+import shutil
 import sys
-from typing import Optional, Type, TypeVar
+from pathlib import Path
+from typing import Optional, TypeVar
 
 # Import third-party modules
 import click
 
 # Import local modules
-from . import scripts
-from .core.plugin import Plugin, PluginManager
-from .core.template import RuleConverter
-
-TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
+from ai_rules import scripts
+from ai_rules.core.config import get_templates_dir
+from ai_rules.core.plugin import Plugin, PluginManager
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -43,27 +46,43 @@ def setup_logging(debug: bool = False) -> None:
     if sys.stderr.encoding != "utf-8":
         sys.stderr.reconfigure(encoding="utf-8")
 
+    logger.debug("Logging configured with level111: %s", log_level)
+
 
 @click.group()
 @click.option("--debug", is_flag=True, help="Enable debug logging")
 def cli(debug: bool) -> None:
-    """AI Rules CLI tool for managing AI assistant configurations and running AI-powered tools."""
+    """AI Rules CLI tool for managing AI assistant configurations and running AI-powered tools.
+
+    Global options like --debug should be placed before subcommands.
+
+    Example usage:
+        ai-rules --debug plugin  # Enable debug logging for plugin command
+        ai-rules plugin         # Run without debug logging
+    """
     setup_logging(debug)
 
 
 @cli.command()
-@click.argument("assistant_type", type=click.Choice(["windsurf", "cursor", "cli"]))
+@click.argument("assistant_type", type=click.Choice(["windsurf", "cursor", "cline"]))
 @click.option("--output-dir", "-o", default=".", help="Output directory for generated files")
 def init(assistant_type: str, output_dir: str) -> None:
     """Initialize AI assistant configuration files."""
     try:
-        converter = RuleConverter(TEMPLATES_DIR)
-        converter.convert_to_markdown(assistant_type, output_dir)
-        click.echo(f"Successfully initialized {assistant_type} configuration in {output_dir}")
+        templates_dir = get_templates_dir()
+        template_file = templates_dir / f"{assistant_type}_template.yaml"
+
+        if not template_file.exists():
+            raise click.ClickException(f"Template file not found: {template_file}")
+
+        output_path = Path(output_dir) / "ai_rules_config.yaml"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        shutil.copy2(template_file, output_path)
+        click.echo(f"Created configuration file: {output_path}")
+
     except Exception as e:
-        logger.exception("Failed to initialize configuration: %s", e)
-        click.echo(f"Error: {e!s}", err=True)
-        sys.exit(1)
+        raise click.ClickException(str(e))
 
 
 @cli.group(name="scripts")
@@ -122,67 +141,57 @@ def run_script(name: str, args: Optional[str] = None) -> None:
         sys.exit(1)
 
 
-@cli.group()
-def plugin() -> None:
-    """Plugin commands."""
-    pass
+@cli.group(name="plugin")
+def plugin_group() -> None:
+    """Plugin commands.
+
+    This command group provides access to various AI Rules plugins.
+    Use 'ai-rules plugin COMMAND --help' for help on specific commands.
+    """
+    pass  # Plugins are registered at module level
 
 
 T = TypeVar("T", bound=Plugin)
 
 
-def create_plugin_command(plugin_class: Type[T]) -> click.Command:
-    """Create a Click command for a plugin.
-
-    Args:
-        plugin_class: Plugin class to create command for.
-
-    Returns:
-        Click command for plugin.
-    """
-    try:
-        # Create plugin instance
-        plugin = plugin_class()
-
-        # Get Click command from plugin
-        command = plugin.click_command
-        if not command:
-            raise click.ClickException("Plugin must provide a Click command")
-
-        return command
-
-    except Exception as e:
-        logger.exception("Failed to create command: %s", e)
-        raise click.ClickException(str(e)) from e
-
-
 def register_plugins() -> None:
     """Register all plugins."""
     try:
-        # Import plugins directly
-        from ai_rules.plugins import get_plugins
-        plugin_classes = get_plugins()
-        
-        # Register plugin commands
-        for plugin_class in plugin_classes:
+        logger.debug("Starting to register plugins")
+
+        # Get plugin manager instance
+        plugin_manager = PluginManager()
+        logger.debug("Got plugin manager instance")
+
+        # Load plugins
+        plugin_manager._load_plugins()
+        logger.debug("Loaded plugins")
+
+        # Get all registered plugins
+        plugins = plugin_manager.get_all_plugins()
+        logger.debug(f"Found {len(plugins)} plugins: {list(plugins.keys())}")
+
+        # Add each plugin's command to the plugin group
+        for plugin_name, plugin_instance in plugins.items():
+            logger.debug(f"Processing plugin: {plugin_name}")
             try:
-                plugin_instance = plugin_class()
-                logger.debug("Registering plugin: %s", plugin_instance.name)
-                # Get command from plugin instance
+                # Get plugin's click command
                 command = plugin_instance.click_command
-                if command is not None:
-                    # Add command to plugin group
-                    plugin.add_command(command)
-                    logger.debug("Registered plugin command: %s", plugin_instance.name)
+                # Use plugin's name as command name
+                command_name = plugin_name.lower().replace("-", "_")
+                command.name = command_name
+                plugin_group.add_command(command)
+                logger.debug(f"Added command '{command_name}' for plugin {plugin_name}")
+
             except Exception as e:
-                logger.exception("Failed to register plugin %s: %s", plugin_class.__name__, e)
-                logger.error(f"Error registering plugin {plugin_class.__name__}: {e}")
+                logger.error(f"Failed to add command for plugin {plugin_name}: {e}")
+
     except Exception as e:
         logger.exception("Failed to register plugins: %s", e)
-        logger.error(f"Error registering plugins: {e}")
+        raise click.ClickException(str(e)) from e
 
 
-# Register plugins when module is loaded
+# Register plugins at module level
 register_plugins()
 
 if __name__ == "__main__":

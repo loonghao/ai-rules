@@ -6,60 +6,68 @@ It implements a robust download strategy with multiple fallback options.
 
 # Import built-in modules
 import asyncio
-import base64
+import hashlib
 import json
 import logging
 import os
-import hashlib
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Protocol, Union
-from pathlib import Path
 import re
 import urllib.parse
-from enum import Enum, auto
 from dataclasses import dataclass
+from datetime import datetime
+from enum import Enum, auto
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Protocol
 
 # Import third-party modules
 import aiohttp
-from bs4 import BeautifulSoup
-from playwright.async_api import async_playwright, Page
 import click
+from bs4 import BeautifulSoup
+from playwright.async_api import Page, async_playwright
 from pydantic import BaseModel, Field
+
+from ai_rules.core.config import get_images_dir
 
 # Import local modules
 from ai_rules.core.http_client import HTTPClient
-from ai_rules.core.plugin import Plugin, BasePluginResponse
-from ai_rules.core.config import get_images_dir
+from ai_rules.core.plugin import BasePluginResponse, Plugin
 
 # Configure logger
 logger: logging.Logger = logging.getLogger(__name__)
 
+
 class DownloadStrategy(Enum):
     """Available download strategies."""
+
     HTTP = auto()
     HTTP_NO_SSL = auto()
     PLAYWRIGHT = auto()
 
+
 class ImageSource(Enum):
     """Image source types."""
+
     DIRECT = auto()
     BASE64 = auto()
     SCREENSHOT = auto()
 
+
 @dataclass
 class DownloadResult:
     """Download result data."""
+
     success: bool
     file_path: Optional[Path]
     strategy: DownloadStrategy
     source: Optional[ImageSource] = None
     error: Optional[str] = None
 
+
 class ImageResponse(BasePluginResponse):
     """Image search and download response model."""
-    
+
     class ImageData(BaseModel):
         """Structure for image data."""
+
         url: str = Field(..., description="Image URL")
         file_path: Optional[str] = Field(None, description="Local file path if downloaded")
         strategy: Optional[str] = Field(None, description="Download strategy used")
@@ -67,33 +75,39 @@ class ImageResponse(BasePluginResponse):
 
     data: List[ImageData] = Field(default_factory=list, description="List of image results")
 
+
 class DownloadError(Exception):
     """Base exception for download errors."""
+
     pass
+
 
 class SSLError(DownloadError):
     """SSL verification error."""
+
     pass
+
 
 class HTTPError(DownloadError):
     """HTTP request error."""
+
     pass
+
 
 class PlaywrightError(DownloadError):
     """Playwright-specific error."""
+
     pass
 
+
 # Configuration constants
-PROBLEMATIC_DOMAINS = {
-    'docs.unrealengine.com': 'Known 403 issues',
-    'jonas-erkert.de': 'SSL version issues'
-}
+PROBLEMATIC_DOMAINS = {"docs.unrealengine.com": "Known 403 issues", "jonas-erkert.de": "SSL version issues"}
 
 BROWSER_HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.5',
-    'Connection': 'keep-alive'
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+    "Connection": "keep-alive",
 }
 
 FIREFOX_PREFS = {
@@ -107,18 +121,19 @@ FIREFOX_PREFS = {
     "security.ssl3.rsa_rc4_40_md5": True,
     "security.tls.insecure_fallback_hosts": "",
     "network.stricttransportsecurity.preloadlist": False,
-    "network.http.spdy.enabled.http2": False
+    "network.http.spdy.enabled.http2": False,
 }
 
 CHROMIUM_ARGS = [
-    '--disable-web-security',
-    '--allow-running-insecure-content',
-    '--ignore-certificate-errors',
-    '--ignore-ssl-errors',
-    '--disable-gpu',
-    '--no-sandbox',
-    '--disable-setuid-sandbox'
+    "--disable-web-security",
+    "--allow-running-insecure-content",
+    "--ignore-certificate-errors",
+    "--ignore-ssl-errors",
+    "--disable-gpu",
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
 ]
+
 
 class ImageResult(BaseModel):
     """Image result model."""
@@ -135,45 +150,49 @@ class ImageResult(BaseModel):
 
 class DownloadStrategyProtocol(Protocol):
     """Protocol for download strategies."""
-    
+
     async def download(self, url: str, save_dir: Path) -> DownloadResult:
         """Download image using this strategy."""
         ...
 
+
 def clean_filename(url: str) -> str:
     """Clean URL to create a valid filename.
-    
+
     Args:
         url: URL to clean
-        
+
     Returns:
         Clean filename
     """
     # Remove query parameters and fragments
-    url = url.split('?')[0].split('#')[0]
-    
+    url = url.split("?")[0].split("#")[0]
+
     # Get the last part of the URL as filename
-    filename = url.split('/')[-1]
-    
+    filename = url.split("/")[-1]
+
     # Remove invalid characters
-    filename = re.sub(r'[<>:"/\\|?*]', '', filename)
-    
+    filename = re.sub(r'[<>:"/\\|?*]', "", filename)
+
     # Get extension
     ext = os.path.splitext(filename)[1]
     if not ext:
-        ext = '.jpg'
-    
+        ext = ".jpg"
+
     # Create hash
     url_hash = hashlib.md5(url.encode()).hexdigest()
-    
+
     return f"{url_hash}{ext}"
+
 
 class HTTPDownloader:
     """HTTP download strategy."""
 
-    def __init__(self, verify_ssl: bool = True, timeout: int = 10, max_retries: int = 3, retry_delay: float = 1.0) -> None:
+    def __init__(
+        self, verify_ssl: bool = True, timeout: int = 10, max_retries: int = 3, retry_delay: float = 1.0
+    ) -> None:
         """Initialize HTTP downloader.
-        
+
         Args:
             verify_ssl: Whether to verify SSL certificates
             timeout: Timeout in seconds
@@ -189,7 +208,7 @@ class HTTPDownloader:
 
     async def _get_session(self) -> HTTPClient:
         """Get or create HTTP client session.
-        
+
         Returns:
             HTTPClient session
         """
@@ -205,28 +224,25 @@ class HTTPDownloader:
 
     async def _handle_response(self, response: aiohttp.ClientResponse, save_path: Path) -> DownloadResult:
         """Handle HTTP response and save image if successful.
-        
+
         Args:
             response: HTTP response
             save_path: Path to save the image
-        
+
         Returns:
             DownloadResult with download status and details
-        
+
         Raises:
             HTTPError: If response status is not 200 or content is not an image
         """
         if response.status == 200:
-            content_type = response.headers.get('content-type', '')
-            if 'image' in content_type:
+            content_type = response.headers.get("content-type", "")
+            if "image" in content_type:
                 data = await response.read()
                 save_path.write_bytes(data)
                 logger.info(f"Saved image to {save_path}")
                 return DownloadResult(
-                    success=True,
-                    file_path=save_path,
-                    strategy=self.strategy,
-                    source=ImageSource.DIRECT
+                    success=True, file_path=save_path, strategy=self.strategy, source=ImageSource.DIRECT
                 )
             else:
                 error_msg = f"Content type is not an image: {content_type}"
@@ -245,11 +261,11 @@ class HTTPDownloader:
 
     async def download(self, url: str, save_dir: Path) -> DownloadResult:
         """Download image using HTTP client.
-        
+
         Args:
             url: Image URL
             save_dir: Directory to save the image
-        
+
         Returns:
             DownloadResult with download status and details
         """
@@ -261,12 +277,7 @@ class HTTPDownloader:
         # Skip if already downloaded
         if save_path.exists():
             logger.info(f"Image already exists: {save_path}")
-            return DownloadResult(
-                success=True,
-                file_path=save_path,
-                strategy=self.strategy,
-                source=ImageSource.DIRECT
-            )
+            return DownloadResult(success=True, file_path=save_path, strategy=self.strategy, source=ImageSource.DIRECT)
 
         while retries < self.max_retries:
             try:
@@ -289,7 +300,7 @@ class HTTPDownloader:
 
             except (HTTPError, SSLError, DownloadError) as e:
                 last_error = e
-                if hasattr(e, 'temporary') and e.temporary:
+                if hasattr(e, "temporary") and e.temporary:
                     retries += 1
                     if retries < self.max_retries:
                         delay = self.retry_delay * (2 ** (retries - 1))  # Exponential backoff
@@ -306,12 +317,13 @@ class HTTPDownloader:
             raise last_error
         raise DownloadError("Maximum retries exceeded")
 
+
 class PlaywrightDownloader:
     """Playwright download strategy."""
 
     def __init__(self, timeout: int = 30, max_retries: int = 2, retry_delay: float = 2.0) -> None:
         """Initialize Playwright downloader.
-        
+
         Args:
             timeout: Page load timeout in seconds
             max_retries: Maximum number of retry attempts
@@ -324,11 +336,11 @@ class PlaywrightDownloader:
 
     async def _take_screenshot(self, page: Page, save_path: Path) -> DownloadResult:
         """Take screenshot of the page.
-        
+
         Args:
             page: Playwright page
             save_path: Path to save the screenshot
-        
+
         Returns:
             DownloadResult with download status and details
         """
@@ -341,20 +353,14 @@ class PlaywrightDownloader:
                     save_path.write_bytes(content)
                     logger.info(f"Saved image from src to {save_path}")
                     return DownloadResult(
-                        success=True,
-                        file_path=save_path,
-                        strategy=self.strategy,
-                        source=ImageSource.PLAYWRIGHT
+                        success=True, file_path=save_path, strategy=self.strategy, source=ImageSource.PLAYWRIGHT
                     )
-            
+
             # If no img element found or no src attribute, take full page screenshot
             await page.screenshot(path=str(save_path))
             logger.info(f"Saved page screenshot to {save_path}")
             return DownloadResult(
-                success=True,
-                file_path=save_path,
-                strategy=self.strategy,
-                source=ImageSource.SCREENSHOT
+                success=True, file_path=save_path, strategy=self.strategy, source=ImageSource.SCREENSHOT
             )
 
         except Exception as e:
@@ -364,11 +370,11 @@ class PlaywrightDownloader:
 
     async def download(self, url: str, save_dir: Path) -> DownloadResult:
         """Download image using Playwright.
-        
+
         Args:
             url: Image URL
             save_dir: Directory to save the image
-        
+
         Returns:
             DownloadResult with download status and details
         """
@@ -379,24 +385,13 @@ class PlaywrightDownloader:
 
         if save_path.exists():
             logger.info(f"Image already exists: {save_path}")
-            return DownloadResult(
-                success=True,
-                file_path=save_path,
-                strategy=self.strategy,
-                source=ImageSource.DIRECT
-            )
+            return DownloadResult(success=True, file_path=save_path, strategy=self.strategy, source=ImageSource.DIRECT)
 
         while retries < self.max_retries:
             try:
                 async with async_playwright() as p:
-                    browser = await p.chromium.launch(
-                        ignore_default_args=["--mute-audio"],
-                        args=["--no-sandbox"]
-                    )
-                    context = await browser.new_context(
-                        ignore_https_errors=True,
-                        bypass_csp=True
-                    )
+                    browser = await p.chromium.launch(ignore_default_args=["--mute-audio"], args=["--no-sandbox"])
+                    context = await browser.new_context(ignore_https_errors=True, bypass_csp=True)
                     page = await context.new_page()
 
                     try:
@@ -419,7 +414,7 @@ class PlaywrightDownloader:
 
             except PlaywrightError as e:
                 last_error = e
-                if hasattr(e, 'temporary') and e.temporary:
+                if hasattr(e, "temporary") and e.temporary:
                     retries += 1
                     if retries < self.max_retries:
                         delay = self.retry_delay * (2 ** (retries - 1))  # Exponential backoff
@@ -441,6 +436,7 @@ class PlaywrightDownloader:
             raise last_error
         raise DownloadError("Maximum retries exceeded")
 
+
 class ImageDownloader:
     """Image downloader with multiple strategies."""
 
@@ -457,10 +453,10 @@ class ImageDownloader:
 
     def _choose_initial_strategy(self, url: str) -> DownloadStrategy:
         """Choose initial download strategy based on URL.
-        
+
         Args:
             url: Image URL
-        
+
         Returns:
             Most appropriate download strategy for the URL
         """
@@ -471,17 +467,17 @@ class ImageDownloader:
 
     async def download(self, url: str, save_dir: Path) -> DownloadResult:
         """Download image using appropriate strategy.
-        
+
         Args:
             url: Image URL
             save_dir: Directory to save the image
-        
+
         Returns:
             DownloadResult with download status and details
         """
         strategy = self._choose_initial_strategy(url)
         last_error = None
-        
+
         try:
             if strategy == DownloadStrategy.HTTP:
                 try:
@@ -521,22 +517,13 @@ class ImageDownloader:
 
             error_msg = f"All download strategies failed: {last_error}"
             logger.error(error_msg)
-            return DownloadResult(
-                success=False,
-                file_path=None,
-                strategy=strategy,
-                error=error_msg
-            )
+            return DownloadResult(success=False, file_path=None, strategy=strategy, error=error_msg)
 
         except Exception as e:
             error_msg = f"All download strategies failed: {e}"
             logger.error(error_msg)
-            return DownloadResult(
-                success=False,
-                file_path=None,
-                strategy=strategy,
-                error=error_msg
-            )
+            return DownloadResult(success=False, file_path=None, strategy=strategy, error=error_msg)
+
 
 class ImagePlugin(Plugin):
     """Bing image search plugin."""
@@ -632,8 +619,7 @@ class ImagePlugin(Plugin):
 
             # Search for images
             search_url = (
-                f"https://www.bing.com/images/search?q={query}"
-                f"&setlang=en&mkt={region}&safesearch={safesearch}"
+                f"https://www.bing.com/images/search?q={query}" f"&setlang=en&mkt={region}&safesearch={safesearch}"
             )
 
             search_client = HTTPClient()
@@ -654,14 +640,20 @@ class ImagePlugin(Plugin):
                         continue
 
                     download_result = await downloader.download(image_url, save_dir)
-                    if download_result:  
-                        results.append({
-                            "url": image_url,
-                            "file_path": str(download_result.file_path) if download_result.success else None,
-                            "strategy": download_result.strategy.name if download_result.success else None,
-                            "source": download_result.source.name if download_result.success and download_result.source else None,
-                            "error": download_result.error if not download_result.success else None
-                        })
+                    if download_result:
+                        results.append(
+                            {
+                                "url": image_url,
+                                "file_path": str(download_result.file_path) if download_result.success else None,
+                                "strategy": download_result.strategy.name if download_result.success else None,
+                                "source": (
+                                    download_result.source.name
+                                    if download_result.success and download_result.source
+                                    else None
+                                ),
+                                "error": download_result.error if not download_result.success else None,
+                            }
+                        )
 
                 except json.JSONDecodeError:
                     logger.warning(f"Failed to parse image data: {element.get('m')}")
@@ -681,8 +673,8 @@ class ImagePlugin(Plugin):
                     "region": region,
                     "safesearch": safesearch,
                     "save_dir": str(save_dir),
-                    "timestamp": datetime.now().isoformat()
-                }
+                    "timestamp": datetime.now().isoformat(),
+                },
             )
 
             return response.json()
@@ -697,8 +689,8 @@ class ImagePlugin(Plugin):
                 metadata={
                     "plugin_name": self.name,
                     "plugin_version": self.version,
-                    "timestamp": datetime.now().isoformat()
-                }
+                    "timestamp": datetime.now().isoformat(),
+                },
             )
             return error_response.json()
 
@@ -737,6 +729,7 @@ class ImagePlugin(Plugin):
         def image_command(**kwargs) -> str:
             """Execute the image search command."""
             import asyncio
+
             return asyncio.run(self.execute(**kwargs))
 
         return image_command
