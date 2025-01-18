@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ai-rules"
-version = "0.2.0"
+version = "0.3.0"
 description = "A powerful CLI toolkit for extending and enhancing AI capabilities through customizable rules and commands."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -86,7 +86,7 @@ test = [
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.2.0"
+version = "0.3.0"
 tag_format = "v$version"
 version_files = [
     "pyproject.toml:version",

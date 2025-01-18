@@ -1,3 +1,14 @@
+## v0.3.0 (2025-01-18)
+
+### Feat
+
+- Enhancements to web_scraper, including asynchronous execution and Markdown conversion.
+- **image_search**: replace search engine and refactor download logic
+
+### Refactor
+
+- **local-search**: improve plugin registration and search functionality
+
 ## v0.2.0 (2025-01-14)
 
 ### Feat
